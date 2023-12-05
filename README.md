@@ -17,7 +17,7 @@ Open and parse gltf file
 
 ```c
 File! file = file::open("examples/gltf/assets/boxes.glb", "r");
-defer try file.close()!!;
+defer file.close()!!;
 
 if (catch err = file) {
     io::printfn("Failed to load the gltf file");
@@ -25,7 +25,7 @@ if (catch err = file) {
 }
 
 Gltf! gltf_data = gltf::parse(&file);
-defer try gltf_data.free();
+defer gltf_data.free()!!;
 
 if (catch err = gltf_data) {
     io::printfn("%s", err);
