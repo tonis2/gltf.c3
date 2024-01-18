@@ -15,7 +15,6 @@ import std::collections::map;
 def NodeList = List(<Node>);
 def SceneList= List(<Scene>);
 def MeshList = List(<Mesh>);
-def IndexList = List(<uint>);
 def BufferList = List(<Buffer>);
 def BufferViewList = List(<BufferView>);
 def AccessorList = List(<Accessor>);
@@ -24,15 +23,11 @@ def MaterialList = List(<Material>);
 def ImageList = List(<Image>);
 def SamplerList = List(<Sampler>);
 def TextureList = List(<Texture>);
-def AnimationSamplers = List(<AnimationSampler>);
-def ChannelList = List(<Channel>);
-def MixerChannels = List(<MixerChannel>);
+def Animations = List(<AnimationMixer>);
+
 def AnimationList = List(<Animation>);
 def SkinList = List(<Skin>);
-def PrimitiveMap = HashMap(<String, usz>);
-def PrimitiveList = List(<PrimitiveMap>);
-def FloatList = List(<float>);
-def AnimationValues = List(<AnimationValue>);
+def AttributeMap = HashMap(<String, usz>);
 
 enum Targets {
     ARRAY_BUFFER,
@@ -114,13 +109,6 @@ enum MagFilter {
     LINEAR,
 }
 
-union AnimationValue
-{
-    Vec3f transform;
-    Vec3f scale;
-    Quaternionf rotation;
-}
-
 fault ParseError
 {
     FILE_NOT_FOUND,
@@ -152,7 +140,7 @@ struct Gltf {
 
 struct Scene {
     String name;
-    IndexList nodes;
+    List(<uint>) nodes;
 }
 
 struct Node {
@@ -164,20 +152,27 @@ struct Node {
     Matrix4f matrix;
     Vec3f scale;
     Vec3f translation;
-    IndexList children;
+    List(<uint>) children;
+    List(<float>) weights;
+}
+
+struct Primitive {
+    AttributeMap attributes;
+    List(<AttributeMap>) targets;
 }
 
 struct Mesh {
     String name;
     usz scene;
-    PrimitiveList primitives;
-    IndexList children;
+    List(<Primitive>) primitives;
+    List(<uint>) children;
+    List(<float>) weights;
 }
 
 struct Animation {
     String name;
-    AnimationSamplers samplers;
-    ChannelList channels;
+    List(<AnimationSampler>) samplers;
+    List(<Channel>) channels;
 }
 
 struct AnimationSampler {
@@ -194,25 +189,33 @@ struct Channel {
     }
 }
 
+union AnimationValue
+{
+    Vec3f transform;
+    Vec3f scale;
+    Quaternionf rotation;
+    float weight;
+}
+
 struct MixerChannel {
     inline Channel channel;
     double time;
     double max_time;
-    FloatList times;
-    AnimationValues values;
+    List(<float>) times;
+    List(<AnimationValue>) values;
 }
 
 struct AnimationMixer {
     String name;
-    AnimationSamplers samplers;
-    MixerChannels channels;
+    List(<AnimationSampler>) samplers;
+    List(<MixerChannel>) channels;
 }
 
 struct Skin {
     String name;
     uint inverseBindMatrices;
     uint skeleton;
-    IndexList joints;
+    List(<uint>) joints;
 }
 
 struct Material {
@@ -230,7 +233,6 @@ struct Material {
         TextureInfo emissiveTexture;
     }
 }
-
 
 struct TextureInfo {
     int index;
@@ -279,8 +281,9 @@ struct Accessor {
     Mode mode;
     DataType data_type;
     AccessorType type;
-    FloatList min;
-    FloatList max;
+    uint morph_index;
+    List(<float>) min;
+    List(<float>) max;
 }
 
 struct BufferView {
@@ -297,6 +300,19 @@ struct Buffer {
     uint size;
     ResourceType type;
 }
+
+const EMPTY_MATERIAL = Material {
+    .name = "empty",
+    .doubleSided = false,
+    .pbrMetallicRoughness = {
+        .baseColorFactor = {1.0, 1.0, 1.0, 1.0},
+        .baseColorTexture = {
+            .source = -1,
+            .sampler = -1,
+            .texCoord = {0, 0}
+        }
+    }
+};
 
 // Parsing JSON to structs
 fn void Scene.fromJson(&self, Object* json) {
@@ -364,6 +380,7 @@ fn bool Node.hasMesh(self) {
 
 fn void Node.free(self) {
     self.children.free();
+    self.weights.free();
     self.name.free();
 }
 
@@ -374,27 +391,53 @@ fn bool Node.hasCamera(self) {
 fn void Mesh.fromJson(&self, Object* json) {
     String! name = json.get_string("name");
     Object*! primitives = json.get("primitives");
+    Object*! weights = json.get("weights");
 
     if (try name) self.name = name.copy();
+    if (try weights) {
+        foreach (weight : weights.array) self.weights.push((float)weight.f);
+    }
+
     if (try primitives) {
         foreach (primitive : primitives.array) {
-            PrimitiveMap primitive_map;
+            Primitive data;
+
             Object*! attributes = primitive.get("attributes");
+            Object*! targets = primitive.get("targets");
 
             uint! indices = primitive.get_int("indices");
             uint! material = primitive.get_int("material");
+            uint! mode = primitive.get_int("mode");
 
-            if (try indices) primitive_map["indices"] = indices;
-            if (try material) primitive_map["material"] = material;
+            if (try indices) data.attributes["indices"] = indices;
+            if (try material) data.attributes["material"] = material;
+            if (try mode) data.attributes["mode"] = mode;
+
             if (try attributes) {
                 foreach (key : attributes.map.key_tlist()) {
-                    primitive_map[key] = (usz)attributes.map[key]!!.f;
+                    data.attributes[key] = (usz)attributes.map[key]!!.f;
                 }
             }
 
-            self.primitives.push(primitive_map);
+            if (try targets) {
+                foreach (target : targets.array) {
+                    AttributeMap target_attibutes;
+                    foreach (key : target.map.key_tlist()) {
+                        target_attibutes[key] = (usz)target.map[key]!!.f;
+                    }
+                    data.targets.push(target_attibutes);
+                }
+            }
+
+            self.primitives.push(data);
         }
     }
+}
+
+fn void Primitive.free(&self) {
+    self.attributes.free();
+    foreach (target : self.targets) target.free();
+    self.targets.free();
 }
 
 fn void Mesh.free(&self) {
@@ -402,6 +445,7 @@ fn void Mesh.free(&self) {
     foreach (primitive : self.primitives) primitive.free();
     self.primitives.free();
     self.name.free();
+    self.weights.free();
 }
 
 fn void BufferView.fromJson(&self, Object* json) {
@@ -1002,6 +1046,7 @@ fn Gltf! parse(InStream* stream) {
          }
     }
 
+    // Parse mesh morphing data, into a format that can be uploaded to GPU
     return content;
 }
 
@@ -1049,14 +1094,13 @@ fn AnimationMixer Gltf.loadAnimation(self, Animation animation) {
         }
 
         // Parse animation timing values, from buffer
-        for (uint i; i < time_accessor.count; i++) {
+        for (ulong i; i < time_accessor.count; i++) {
             channel.times.push(self.@castBuffer(time_accessor, i * time_accessor.componentSize(), float));
         }
 
         // Parse animation transform values, from buffer
         Accessor value_accessor = self.accessors[sampler.output];
-
-        for (uint i; i < value_accessor.count; i++) {
+        for (ulong i; i < value_accessor.count; i++) {
             switch (channel.target.path) {
                 case TRANSLATION: {
                     channel.values.push(AnimationValue {
@@ -1073,7 +1117,11 @@ fn AnimationMixer Gltf.loadAnimation(self, Animation animation) {
                         .rotation = self.@castBuffer(value_accessor, i * value_accessor.componentSize(), Quaternionf)
                     });
                 }
-                case WEIGHTS: {}
+                case WEIGHTS: {
+                    channel.values.push(AnimationValue {
+                       .weight = self.@castBuffer(value_accessor, i * value_accessor.componentSize(), float)
+                    });
+                }
             }
         }
     }
@@ -1115,35 +1163,49 @@ fn void Gltf.animate(&self, AnimationMixer* animation, NanoDuration time) {
             };
         }
 
-        if (channel.times.len() < 2) return;
-
-        double prev_time = channel.times[time_index - 1];
-        double next_time = channel.times[time_index];
-
-        AnimationValue prev_value = channel.values[time_index - 1];
-        AnimationValue next_value = channel.values[time_index];
-
-        switch (sampler.interpolation) {
-            case LINEAR: {
-              double interpolation_value = (channel.time - prev_time) / (next_time - prev_time);
-              switch (channel.target.path) {
-                case TRANSLATION: {
-                    node.translation = prev_value.transform + interpolation_value * (next_value.transform - prev_value.transform);
-                }
-                case ROTATION: {
-                    node.rotation = prev_value.rotation.slerp(next_value.rotation, (float)interpolation_value);
-                }
-                case SCALE: {
-                    node.scale = prev_value.transform + interpolation_value * (next_value.transform - prev_value.transform);
-                }
-                case WEIGHTS: {
-
-                }
-              }
+       if (channel.target.path == WEIGHTS) {
+            foreach (i, weight: node.weights) {
+                node.weights[i] = channel.values[time_index * node.weights.len() + i].weight;
             }
-            case STEP: {}
-            case CUBICSPLINE: {}
-        }
+       } else {
+            double prev_time = channel.times[time_index - 1];
+            double next_time = channel.times[time_index];
+
+            AnimationValue prev_value = channel.values[time_index - 1];
+            AnimationValue next_value = channel.values[time_index];
+            double interpolation_value = (channel.time - prev_time) / (next_time - prev_time);
+
+            if (sampler.interpolation == LINEAR) {
+                switch (channel.target.path) {
+                    case TRANSLATION: {
+                        node.translation = prev_value.transform + interpolation_value * (next_value.transform - prev_value.transform);
+                    }
+                    case ROTATION: {
+                        node.rotation = prev_value.rotation.slerp(next_value.rotation, (float)interpolation_value);
+                    }
+                    case SCALE: {
+                        node.scale = prev_value.transform + interpolation_value * (next_value.transform - prev_value.transform);
+                    }
+                    default: {}
+                }
+            }
+
+            if (sampler.interpolation == STEP) {
+                AnimationValue value = channel.values[time_index];
+                switch (channel.target.path) {
+                    case TRANSLATION: {
+                        node.translation = value.transform;
+                    }
+                    case ROTATION: {
+                        node.rotation = value.rotation;
+                    }
+                    case SCALE: {
+                        node.scale = value.scale;
+                    }
+                    default: {}
+                }
+            }
+       }
    }
 }
 
@@ -1236,17 +1298,98 @@ fn Matrix4f Node.recompose(&self) {
    return translation.mul(rotation).mul(scale);
 }
 
-macro Gltf.@castBuffer(&self, Accessor accessor, uint offset, #type) {
+macro Gltf.@castBuffer(&self, Accessor accessor, usz offset, #type) {
     BufferView bufferView = self.bufferViews[accessor.view];
     Buffer buffer = self.buffers[bufferView.buffer];
     return bitcast(*(char[#type.sizeof]*)buffer.data[accessor.offset + bufferView.offset + offset..], #type);
 }
 
-fn void Node.mapValues(&self, usz scene_index, Gltf* data) @private {
+fn uint String.attributeType(self) {
+    switch (self) {
+        case "POSITION":
+            return 0;
+        case "TANGENT":
+            return 1;
+        case "NORMAL":
+            return 2;
+        default:
+            return 20;
+    }
+}
 
+struct MorphTargets {
+    uint target_index;
+    uint type;
+    int next_row;
+    uint offset;
+}
+
+struct MorphMixer {
+    List(<MorphTargets>) targets;
+    HashMap(<usz, usz>) indexes;
+}
+
+fn usz MorphMixer.size(self) {
+    return self.targets.len() * MorphTargets.sizeof;
+}
+
+fn void MorphMixer.free(&self) {
+    self.targets.free();
+    self.indexes.free();
+}
+
+fn int MorphMixer.getTarget(&self, usz mesh_index, usz prim_index) {
+    return (int)self.indexes[mesh_index + prim_index] ?? -1;
+}
+
+fn MorphMixer! Gltf.createMorphMixer(&self, usz scene) {
+    MorphMixer mixer;
+    foreach (mesh_index, mesh: self.meshes) {
+      foreach (prim_index, primitive: mesh.primitives) {
+            usz target_keys_len = 0;
+            foreach (target_index, target: primitive.targets) {
+                target_keys_len = target.len();
+
+                if (mesh.scene == scene) {
+                   String[] keys = target.key_tlist();
+                   foreach (i, key : keys) {
+                        Accessor morph_accessor = self.accessors[target[key]!!];
+                        gltf::BufferView morph_view = self.bufferViews[morph_accessor.view];
+
+                        // Get buffer index, for next morph target in the array
+                        int next = {|
+                            if (i+1 < keys.len) {
+                                return (uint)mixer.targets.len() + 1;
+                            };
+
+                            if (target_index+1 < primitive.targets.len()) {
+                                return (uint)mixer.targets.len() + 1;
+                            }
+
+                            return -1;
+                        |};
+
+                        mixer.targets.push({
+                            .target_index = (uint)target_index,
+                            .type = key.attributeType(),
+                            .next_row = next,
+                            .offset = morph_view.offset / 4
+                        });
+                    }
+                }
+            }
+
+            mixer.indexes[mesh_index + prim_index] = mixer.targets.len() - primitive.targets.len() * target_keys_len;
+        }
+    }
+    return mixer;
+}
+
+fn void Node.mapValues(&self, usz scene_index, Gltf* data) @private {
     if (self.hasMesh()) {
         Mesh mesh = data.meshes[self.mesh];
         mesh.scene = scene_index;
+        foreach (weight: mesh.weights) self.weights.push(weight);
     }
 
     foreach (node_index : self.children) {
@@ -1255,7 +1398,6 @@ fn void Node.mapValues(&self, usz scene_index, Gltf* data) @private {
         node.mapValues(scene_index, data);
     }
 }
-
 
 fn Matrix4f Node.globalMatrix(&self) {
     Matrix4f return_matrix = self.recompose();
@@ -1268,10 +1410,6 @@ fn Matrix4f Node.globalMatrix(&self) {
     }
 
     return return_matrix;
-}
-
-fn PrimitiveMap Mesh.lastPrimitive(Mesh self) {
-   return self.primitives[self.primitives.len() - 1];
 }
 
 fn char[]! Buffer.from_base64(self) {
@@ -1296,7 +1434,7 @@ fn char[]! Buffer.from_base64(self) {
 }*/
 
 
-fn void! Gltf.get_buffer(Gltf* self, Accessor accessor) {
+fn void Gltf.get_buffer(Gltf* self, Accessor accessor) {
     BufferView bufferView = self.bufferViews[accessor.view];
     Buffer buffer = self.buffers[bufferView.buffer];
 
@@ -1321,4 +1459,9 @@ fn void! Gltf.get_buffer(Gltf* self, Accessor accessor) {
     }
 
     io::printf(" \n _______ \n%d");
+}
+
+fn void Animations.release(self) {
+    foreach (animation: self) animation.free();
+    self.free();
 }
