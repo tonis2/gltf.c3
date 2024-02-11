@@ -2,7 +2,7 @@
 GLTF parser for C3
 
 
-### Features
+### Functional features
 
 * GLTF files
 * GLB files
