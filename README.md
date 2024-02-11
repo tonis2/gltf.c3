@@ -7,8 +7,8 @@ GLTF parser for C3
 * GLTF files
 * GLB files
 * External binaries
-
-Still working on getting skinning / animations working.
+* Animations
+* Skin animations
 
 
 ### How to use
