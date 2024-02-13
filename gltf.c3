@@ -857,6 +857,18 @@ fn void Skin.free(&self) {
     self.name.free();
 }
 
+fn Gltf! loadFile(String path) {
+    File! file = file::open(path, "r");
+    defer file.close()!!;
+
+    if (catch err = file) {
+        io::printfn("Failed to find the gltf file");
+        return ParseError.FILE_NOT_FOUND?;
+    }
+
+    return parse(&file);
+}
+
 fn Gltf! parse(InStream* stream) {
     Gltf content;
     Object*! gltfJson;
