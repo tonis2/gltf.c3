@@ -16,21 +16,8 @@ GLTF parser for C3
 Open and parse gltf file
 
 ```c
-File! file = file::open("examples/gltf/assets/boxes.glb", "r");
-defer file.close()!!;
-
-if (catch err = file) {
-    io::printfn("Failed to load the gltf file");
-    return;
-}
-
-Gltf! gltf_data = gltf::parse(&file);
-defer gltf_data.free()!!;
-
-if (catch err = gltf_data) {
-    io::printfn("%s", err);
-    return;
-}
+Gltf gltf_data = gltf::loadFile("examples/gltf/assets/boxes.glb")!;
+defer gltf_data.free();
 ```
 
 
