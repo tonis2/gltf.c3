@@ -2,13 +2,13 @@
 GLTF parser for C3
 
 
-### Features
+### Functional features
 
 * GLTF files
 * GLB files
 * External binaries
-
-Still working on getting skinning / animations working.
+* Animations
+* Skin animations
 
 
 ### How to use
