@@ -31,21 +31,21 @@ Loop over meshes and load vertices / indices
 
    foreach (mesh : gltf_data.meshes) {
         foreach (index, primitive: mesh.primitives) {
-            Accessor pos_accessor = gltf_data.accessors[primitive.position];
-            Accessor tex_accessor = gltf_data.accessors[primitive.tex_cord];
-            Accessor normal_accessor = gltf_data.accessors[primitive.normal];
-            Accessor index_accessor = gltf_data.accessors[primitive.indices];
+            Accessor pos_accessor = gltf_data.accessors[primitive.attributes["POSITION"]!!];
+            Accessor tex_accessor = gltf_data.accessors[primitive.attributes["TEX_CORD"]!!];
+            Accessor normal_accessor = gltf_data.accessors[primitive.attributes["NORMAL"]!!];
+            Accessor index_accessor = gltf_data.accessors[primitive.attributes["index"]!!];
 
             for (uint i = 0; i < pos_accessor.count ; i += 1) {
                 vertices.push(Vertex {
-                    gltf_data.@castBuffer(pos_accessor, i * pos_accessor.componentSize(), Vec3f),
-                    gltf_data.@castBuffer(tex_accessor, i * tex_accessor.componentSize(), Vec2f),
-                    gltf_data.@castBuffer(normal_accessor, i * normal_accessor.componentSize(), Vec3f)
+                    gltf_data.@castBuffer(pos_accessor, i, Vec3f),
+                    gltf_data.@castBuffer(tex_accessor, i, Vec2f),
+                    gltf_data.@castBuffer(normal_accessor, i, Vec3f)
                 });
             }
 
             for (uint i = 0; i < index_accessor.count ; i += 1) {
-                indices.push(gltf_data.@castBuffer(index_accessor, i * index_accessor.componentSize(), ushort));
+                indices.push(gltf_data.@castBuffer(index_accessor, i, ushort));
             }
         }
     }
