@@ -6,9 +6,9 @@ GLTF parser for C3
 
 * GLTF files
 * GLB files
-* External binaries
-* Animations
+* Morph Animations
 * Skin animations
+
 
 
 ### How to use
