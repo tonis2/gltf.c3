@@ -43,7 +43,7 @@ enum AnimationProperty {
     WEIGHTS
 }
 
-enum LightType {
+enum LightType: uint {
     DIRECTIONAL,
     POINT,
     SPOT,
@@ -225,23 +225,16 @@ struct Material {
     float roughnessFactor;
     Vec4f emissiveFactor;
     Vec4f baseColorFactor;
-    TextureInfo normalTexture;
-    TextureInfo occlusionTexture;
-    TextureInfo emissiveTexture;
-    TextureInfo baseColorTexture;
-    TextureInfo metallicRoughnessTexture;
-}
-
-struct TextureInfo {
-    int index;
-    int sampler;
-    int source;
-    uint texCoord;
+    Texture normalTexture;
+    Texture occlusionTexture;
+    Texture emissiveTexture;
+    Texture baseColorTexture;
+    Texture metallicRoughnessTexture;
 }
 
 struct Texture {
-    uint sampler;
-    uint source;
+    int sampler;
+    int source;
 }
 
 struct Sampler {
@@ -301,15 +294,14 @@ struct Image {
 }
 
 struct Light {
-    String name;
+    Vec3f position;
     Vec3f color;
+    LightType type;
     float intensity;
     float range;
-    LightType type;
-    struct spot {
-        float inner_cone_angle;
-        float outer_cone_angle;
-    }
+    float inner_cone_angle;
+    float outer_cone_angle;
+    uint node;
 }
 
 // Parsing JSON to structs
@@ -391,6 +383,10 @@ fn bool Node.hasSkin(self) {
 
 fn bool Node.hasCamera(self) {
     return self.camera != -1;
+}
+
+fn bool Node.hasLight(self) {
+    return self.light != -1;
 }
 
 fn void Node.free(self) {
@@ -659,7 +655,7 @@ fn void Camera.fromJson(&self, Object* json) {
     }
 }
 
-fn void Material.fromJson(&self, Object* json) {
+fn void! Material.fromJson(&self, Object* json, Gltf data) {
     bool! doubleSided = json.get_bool("doubleSided");
     Object*! pbrMetallicRoughness = json.get("pbrMetallicRoughness");
     Object*! occlusionTexture = json.get("occlusionTexture");
@@ -667,12 +663,22 @@ fn void Material.fromJson(&self, Object* json) {
     Object*! emissiveTexture = json.get("emissiveTexture");
     Object*! emissiveFactor = json.get("emissiveFactor");
 
+    self.baseColorFactor = {1.0, 1.0, 1.0, 1.0};
+    self.emissiveFactor = {1.0, 1.0, 1.0, 1.0};
+
+    self.baseColorTexture = {-1, -1};
+    self.metallicRoughnessTexture = {-1, -1};
+    self.occlusionTexture = {-1, -1};
+    self.emissiveTexture =  {-1, -1};
+    self.normalTexture =  {-1, -1};
+
+    self.roughnessFactor = 0;
+    self.metallicFactor = 0;
+    self.emissiveStrength = 1.0;
+
     if (try doubleSided) self.doubleSided = doubleSided;
-    if (try occlusionTexture) self.occlusionTexture.fromJson(occlusionTexture);
-    if (try normalTexture) self.normalTexture.fromJson(normalTexture);
-    if (try emissiveTexture) self.emissiveTexture.fromJson(emissiveTexture);
     if (try emissiveFactor) {
-        self.emissiveFactor = {(float)emissiveFactor.get_at(0).f, (float)emissiveFactor.get_at(1).f, (float)emissiveFactor.get_at(2).f, 0.0};
+        self.emissiveFactor = {(float)emissiveFactor.get_at(0).f, (float)emissiveFactor.get_at(1).f, (float)emissiveFactor.get_at(2).f, 1.0};
     }
 
     if (try pbrMetallicRoughness) {
@@ -681,11 +687,7 @@ fn void Material.fromJson(&self, Object* json) {
 
         Object*! baseColorTexture = pbrMetallicRoughness.get("baseColorTexture");
         Object*! baseColorFactor = pbrMetallicRoughness.get("baseColorFactor");
-        Object*! metallicRoughnessTexture = pbrMetallicRoughness.get("baseColorTexture");
-
-        self.baseColorFactor = {1.0, 1.0, 1.0, 1.0};
-        self.baseColorTexture = {-1, -1, -1, 0};
-        self.metallicRoughnessTexture =  {-1, -1, -1, 0};
+        Object*! metallicRoughnessTexture = pbrMetallicRoughness.get("metallicRoughnessTexture");
 
         if (try metallicFactor && try roughnessFactor) {
             self.metallicFactor = (float)metallicFactor;
@@ -696,17 +698,13 @@ fn void Material.fromJson(&self, Object* json) {
             self.baseColorFactor = Vec4f {(float)baseColorFactor.get_at(0).f, (float)baseColorFactor.get_at(1).f, (float)baseColorFactor.get_at(2).f, (float)baseColorFactor.get_at(3).f};
         }
 
-        if (try baseColorTexture) self.baseColorTexture.fromJson(baseColorTexture);
-        if (try metallicRoughnessTexture) self.metallicRoughnessTexture.fromJson(metallicRoughnessTexture);
+        if (try baseColorTexture) self.baseColorTexture = data.textures[baseColorTexture.get_int("index")!];
+        if (try metallicRoughnessTexture) self.metallicRoughnessTexture = data.textures[metallicRoughnessTexture.get_int("index")!];
     }
-}
 
-fn void TextureInfo.fromJson(&self, Object* json) {
-    uint! index = json.get_int("index");
-    uint! texCoord = json.get_int("texCoord");
-
-    if (try index) self.index = index;
-    if (try texCoord) self.texCoord = texCoord;
+    if (try occlusionTexture) self.occlusionTexture = data.textures[occlusionTexture.get_int("index")!];
+    if (try normalTexture) self.normalTexture = data.textures[normalTexture.get_int("index")!];
+    if (try emissiveTexture) self.emissiveTexture = data.textures[emissiveTexture.get_int("index")!];
 }
 
 fn void Texture.fromJson(&self, Object* json) {
@@ -872,7 +870,7 @@ fn void Light.fromJson(&self, Object* json) {
 
     self.color = {1.0, 1.0, 1.0};
 
-    if (try name) self.name = name.copy();
+    // if (try name) self.name = name.copy();
     if (try color) self.color = {(float)color.get_at(0).f, (float)color.get_at(1).f, (float)color.get_at(2).f};
     if (try intensity) self.intensity = intensity;
     if (try range) self.range = range;
@@ -885,13 +883,9 @@ fn void Light.fromJson(&self, Object* json) {
     };
 
     if (try spot && self.type == LightType.SPOT) {
-        self.spot.inner_cone_angle = (float)spot.get_float("innerConeAngle") ?? 0.0;
-        self.spot.outer_cone_angle = (float)spot.get_float("outerConeAngle") ?? math::PI / 4.0;
+        self.inner_cone_angle = (float)spot.get_float("innerConeAngle") ?? 0.0;
+        self.outer_cone_angle = (float)spot.get_float("outerConeAngle") ?? math::PI / 4.0;
     }
-}
-
-fn void Light.free(&self) {
-    self.name.free();
 }
 
 fn Gltf! loadFile(String path) {
@@ -1007,6 +1001,20 @@ fn Gltf! parse(InStream* stream) {
         }
     }
 
+
+    if (try extensions) {
+        Object*! lights = gltfJson.getExtension(PUNCTUAL_LIGHT_EXTENSION);
+
+        // Parse light extension
+        if (try lights) {
+            foreach (light: lights.map["lights"]!!.array) {
+              Light data;
+              data.fromJson(light);
+              content.lights.push(data);
+            }
+        }
+    }
+
     // Parse scenes
     if (try scenes) {
         foreach (scene : scenes.array) {
@@ -1018,10 +1026,16 @@ fn Gltf! parse(InStream* stream) {
 
     // Parse nodes
     if (try nodes) {
-        foreach (node : nodes.array) {
+        foreach (uint i, node : nodes.array) {
            Node data;
            data.fromJson(node);
            content.nodes.push(data);
+
+           if (data.hasLight()) {
+                Light* light = &content.lights[data.light];
+                // light.node = i;
+                light.position = data.translation;
+           }
         }
     }
 
@@ -1067,29 +1081,11 @@ fn Gltf! parse(InStream* stream) {
         }
     }
 
-
-        // Parse materials
+    // Parse materials
     if (try materials) {
         foreach (json : materials.array) {
             Material material;
-            material.fromJson(json);
-   
-
-            TextureInfo baseColor = material.baseColorTexture;
-            TextureInfo roughness = material.metallicRoughnessTexture;
-
-            if (baseColor.index >= 0) {
-                Texture texture = content.textures[material.baseColorTexture.index];
-                material.baseColorTexture.source = texture.source;
-                material.baseColorTexture.sampler = texture.sampler;
-            }
-
-            if (roughness.index >= 0) {
-                Texture texture = content.textures[material.metallicRoughnessTexture.index];
-                material.metallicRoughnessTexture.source = texture.source;
-                material.metallicRoughnessTexture.sampler = texture.sampler;
-            }
-
+            material.fromJson(json, content)!;
             content.materials.push(material);
         }
     }
@@ -1151,20 +1147,6 @@ fn Gltf! parse(InStream* stream) {
          }
     }
 
-    // Parse extensions
-    if (try extensions) {
-        Object*! lights = gltfJson.getExtension(PUNCTUAL_LIGHT_EXTENSION);
-
-        // Parse light extension
-        if (try lights) {
-            foreach (light: lights.map["lights"]!!.array) {
-              Light data;
-              data.fromJson(light);
-              content.lights.push(data);
-            }
-        }
-    }
-
     return content;
 }
 
@@ -1175,7 +1157,6 @@ fn void Gltf.free(Gltf* self) {
     foreach (scene : self.scenes) scene.free();
     foreach (animation : self.animations) animation.free();
     foreach (accessor : self.accessors) accessor.free();
-    foreach (light : self.lights) light.free();
 
     self.cameras.free();
     self.accessors.free();
