@@ -842,10 +842,11 @@ fn void AnimationMixer.free(&self) {
 
 fn void Skin.fromJson(&self, Object* json) {
     String! name = json.get_string("name");
-    uint! skeleton = json.get_int("skeleton");
-    uint! inverseBindMatrices = json.get_int("inverseBindMatrices");
     Object*! joints = json.get("joints");
 
+    uint! skeleton = json.get_int("skeleton");
+    uint! inverseBindMatrices = json.get_int("inverseBindMatrices");
+    
     if (try name) self.name = name;
     if (try skeleton) self.skeleton = skeleton;
     if (try inverseBindMatrices) self.inverseBindAccessor = inverseBindMatrices;
@@ -900,7 +901,7 @@ fn Gltf! loadFile(String path) {
     return parse(&file);
 }
 
-fn Gltf! parse(InStream* stream) {
+fn Gltf! parse(InStream stream) {
     Gltf content;
     Object*! gltfJson;
     char[12] gltf_header;
@@ -1408,7 +1409,7 @@ fn char[]! parse_base64(char[] data, usz size) {
     return buffer_data;
 }
 
-fn char[]! Buffer.from_binary(self, InStream* stream) {
+fn char[]! Buffer.from_binary(self, InStream stream) {
     char[] data = mem::new_array(char, self.size);
     usz file_size = stream.seek(0, Seek.END)!;
     stream.seek(file_size - self.size, Seek.SET)!;
