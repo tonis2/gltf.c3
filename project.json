@@ -1,0 +1,17 @@
+{
+	"langrev": "1",
+	"warnings": ["no-unused"],
+	"authors": [],
+	"version": "0.1.0",
+	"dependency-search-paths": [],
+	"dependencies": [],
+	"features": [],
+	"linked-libraries": [],
+	"sources": ["./test/*", "./gltf.c3"],
+	"targets": {
+		"main": {
+			"type": "executable"
+		}
+	},
+	"output": "./build"
+}
