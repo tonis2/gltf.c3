@@ -15,6 +15,7 @@ struct Vertex {
     Vec3f normal;
 }
 
+
 fn void! test_glb() {
 
     Gltf gltf_data = gltf::loadFile("test/truck.glb")!!;
@@ -24,7 +25,8 @@ fn void! test_glb() {
     defer vertices.free();
 
     IndexList indices;
-    indices.free();
+    defer indices.free();
+
 
     foreach (mesh : gltf_data.meshes) {
         foreach (index, primitive: mesh.primitives) {
@@ -41,9 +43,12 @@ fn void! test_glb() {
                 });
             }
 
-            //  indices.push(gltf_data.@castBuffer(index_accessor, 1, ushort));
+             indices.push(gltf_data.@castBuffer(index_accessor, 1, ushort));
         }
     }
-    
     assert(vertices.len() == 3995);
+    assert(indices.len() == 4);
+    assert(math::round_to_decimals((float[<3>])vertices[0].pos, 4)  == math::round_to_decimals(float[<3>] {-0.044543, 1.018000, 0.166238}, 4));
+    assert(math::round_to_decimals((float[<2>])vertices[0].tex, 4)  == math::round_to_decimals(float[<2>] {0.711914, 0.120246}, 4));
+    assert(math::round_to_decimals((float[<3>])vertices[0].normal, 4)  == math::round_to_decimals(float[<3>] {-0.000004, 1.000000, -0.000000}, 4));
 }
