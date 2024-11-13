@@ -29,12 +29,12 @@ Loop over meshes and load vertices / indices
     IndexData indices;
     defer indices.free();
 
-   foreach (mesh : gltf_data.meshes) {
+    foreach (mesh : gltf_data.meshes) {
         foreach (index, primitive: mesh.primitives) {
             Accessor pos_accessor = gltf_data.accessors[primitive.attributes["POSITION"]!!];
-            Accessor tex_accessor = gltf_data.accessors[primitive.attributes["TEX_CORD"]!!];
+            Accessor tex_accessor = gltf_data.accessors[primitive.attributes["TEXCOORD_0"]!!];
             Accessor normal_accessor = gltf_data.accessors[primitive.attributes["NORMAL"]!!];
-            Accessor index_accessor = gltf_data.accessors[primitive.attributes["index"]!!];
+            Accessor index_accessor = gltf_data.accessors[primitive.attributes["indices"]!!];
 
             for (uint i = 0; i < pos_accessor.count ; i += 1) {
                 vertices.push(Vertex {
@@ -44,9 +44,7 @@ Loop over meshes and load vertices / indices
                 });
             }
 
-            for (uint i = 0; i < index_accessor.count ; i += 1) {
-                indices.push(gltf_data.@castBuffer(index_accessor, i, ushort));
-            }
+             indices.push(gltf_data.@castBuffer(index_accessor, 1, ushort));
         }
     }
 ```
