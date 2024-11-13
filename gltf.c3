@@ -54,7 +54,7 @@ enum LightType: uint {
 enum ResourceType {
     ENCODED_BIN,
     ENCODED_BASE64,
-    EXTERNAL_BIN
+    EXTERNAL_BIN,
 }
 
 enum AccessorType {
@@ -570,8 +570,7 @@ fn void! Image.fromJson(&self, Object* json) {
     String! name = json.get_string("name");
     String! mimeType = json.get_string("mimeType");
     String! uri = json.get_string("uri");
-    self.type = ResourceType.ENCODED_BIN;
-
+    
     if (try bufferView) self.view = bufferView;
     if (try name) self.name = name;
     if (try mimeType) {
@@ -585,6 +584,8 @@ fn void! Image.fromJson(&self, Object* json) {
     if (try uri) {
         String data_string = (String)uri;
         usz! offset = data_string.index_of_char(';');
+        self.type = ResourceType.ENCODED_BIN;
+
         // Parse image data from base64
         if (try offset) {
             switch (uri[0..offset]) {
@@ -592,14 +593,15 @@ fn void! Image.fromJson(&self, Object* json) {
                 case "data:image/png": self.mimeType = ImageType.IMAGE_PNG;
                 case "data:image/bmp": self.mimeType = ImageType.IMAGE_BMP;
             }
+            // if (uri.ends_with(".bin")) {
+            //     self.type = ResourceType.EXTERNAL_BIN;
+            //     self.uri = uri.copy();
+            // }
+            self.type = ResourceType.ENCODED_BASE64;
+            self.data = parse_base64(self.uri, uri.len)!;
+        } else {
+            self.type = ResourceType.EXTERNAL_BIN;
             self.uri = uri.copy();
-            if (uri.ends_with(".bin")) {
-                self.type = ResourceType.EXTERNAL_BIN;
-            }
-            else {
-                self.type = ResourceType.ENCODED_BASE64;
-                self.data = parse_base64(self.uri, uri.len)!;
-            }
         }
     }
 }
@@ -1470,9 +1472,9 @@ macro Gltf.@castBuffer(&self, Accessor accessor, usz index, #type) {
 }
 
 // Todo https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_animation_pointer
-// macro Gltf.get_pointer(self, String pointer) {
+macro Gltf.get_pointer(self, String pointer) {
 //    return self.map["extensions"]!.map[extension];
-// }
+}
 
 fn void Gltf.debugBuffer(Gltf* self, Accessor accessor) {
     BufferView bufferView = self.bufferViews[accessor.view];
