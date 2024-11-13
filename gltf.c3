@@ -17,6 +17,8 @@ def SkinList = List(<Skin>);
 def AttributeMap = HashMap(<String, usz>);
 
 const PUNCTUAL_LIGHT_EXTENSION = "KHR_lights_punctual";
+const TEXTURE_TRANSFORM_EXTENSION = "KHR_texture_transform";
+const ANIMATION_POINTER_EXTENSION = "KHR_animation_pointer";
 
 enum Targets {
     ARRAY_BUFFER,
@@ -225,16 +227,24 @@ struct Material {
     float roughnessFactor;
     Vec4f emissiveFactor;
     Vec4f baseColorFactor;
-    Texture normalTexture;
-    Texture occlusionTexture;
-    Texture emissiveTexture;
-    Texture baseColorTexture;
-    Texture metallicRoughnessTexture;
+
+    TextureInfo normalTexture;
+    TextureInfo occlusionTexture;
+    TextureInfo emissiveTexture;
+    TextureInfo baseColorTexture;
+    TextureInfo metallicRoughnessTexture;
 }
 
 struct Texture {
     int sampler;
     int source;
+}
+
+struct TextureInfo {
+    int index;
+    float rotation;
+    Vec2f offset;
+    Vec2f scale;
 }
 
 struct Sampler {
@@ -574,19 +584,22 @@ fn void! Image.fromJson(&self, Object* json) {
 
     if (try uri) {
         String data_string = (String)uri;
-        usz offset = data_string.index_of_char(';')!;
-        switch (uri[0..offset]) {
-            case "data:image/jpeg": self.mimeType = ImageType.IMAGE_JPEG;
-            case "data:image/png": self.mimeType = ImageType.IMAGE_PNG;
-            case "data:image/bmp": self.mimeType = ImageType.IMAGE_BMP;
-        }
-        self.uri = uri.copy();
-        if (uri.ends_with(".bin")) {
-            self.type = ResourceType.EXTERNAL_BIN;
-        }
-        else {
-            self.type = ResourceType.ENCODED_BASE64;
-            self.data = parse_base64(self.uri, uri.len)!;
+        usz! offset = data_string.index_of_char(';');
+        // Parse image data from base64
+        if (try offset) {
+            switch (uri[0..offset]) {
+                case "data:image/jpeg": self.mimeType = ImageType.IMAGE_JPEG;
+                case "data:image/png": self.mimeType = ImageType.IMAGE_PNG;
+                case "data:image/bmp": self.mimeType = ImageType.IMAGE_BMP;
+            }
+            self.uri = uri.copy();
+            if (uri.ends_with(".bin")) {
+                self.type = ResourceType.EXTERNAL_BIN;
+            }
+            else {
+                self.type = ResourceType.ENCODED_BASE64;
+                self.data = parse_base64(self.uri, uri.len)!;
+            }
         }
     }
 }
@@ -666,15 +679,12 @@ fn void! Material.fromJson(&self, Object* json, Gltf data) {
     self.baseColorFactor = {1.0, 1.0, 1.0, 1.0};
     self.emissiveFactor = {1.0, 1.0, 1.0, 1.0};
 
-    self.baseColorTexture = {-1, -1};
-    self.metallicRoughnessTexture = {-1, -1};
-    self.occlusionTexture = {-1, -1};
-    self.emissiveTexture =  {-1, -1};
-    self.normalTexture =  {-1, -1};
-
     self.roughnessFactor = 0;
     self.metallicFactor = 0;
     self.emissiveStrength = 1.0;
+    self.occlusionTexture = TextureInfo{}.fromJson(occlusionTexture ?? null);
+    self.normalTexture = TextureInfo{}.fromJson(normalTexture ?? null);
+    self.emissiveTexture = TextureInfo{}.fromJson(emissiveTexture ?? null);
 
     if (try doubleSided) self.doubleSided = doubleSided;
     if (try emissiveFactor) {
@@ -689,6 +699,9 @@ fn void! Material.fromJson(&self, Object* json, Gltf data) {
         Object*! baseColorFactor = pbrMetallicRoughness.get("baseColorFactor");
         Object*! metallicRoughnessTexture = pbrMetallicRoughness.get("metallicRoughnessTexture");
 
+        self.baseColorTexture = TextureInfo{}.fromJson(baseColorTexture ?? null);
+        self.metallicRoughnessTexture = TextureInfo{}.fromJson(metallicRoughnessTexture ?? null);
+
         if (try metallicFactor && try roughnessFactor) {
             self.metallicFactor = (float)metallicFactor;
             self.roughnessFactor = (float)roughnessFactor;
@@ -698,21 +711,36 @@ fn void! Material.fromJson(&self, Object* json, Gltf data) {
             self.baseColorFactor = Vec4f {(float)baseColorFactor.get_at(0).f, (float)baseColorFactor.get_at(1).f, (float)baseColorFactor.get_at(2).f, (float)baseColorFactor.get_at(3).f};
         }
 
-        if (try baseColorTexture) self.baseColorTexture = data.textures[baseColorTexture.get_int("index")!];
-        if (try metallicRoughnessTexture) self.metallicRoughnessTexture = data.textures[metallicRoughnessTexture.get_int("index")!];
     }
-
-    if (try occlusionTexture) self.occlusionTexture = data.textures[occlusionTexture.get_int("index")!];
-    if (try normalTexture) self.normalTexture = data.textures[normalTexture.get_int("index")!];
-    if (try emissiveTexture) self.emissiveTexture = data.textures[emissiveTexture.get_int("index")!];
 }
 
-fn void Texture.fromJson(&self, Object* json) {
-    uint! sampler = json.get_int("sampler");
-    uint! source = json.get_int("source");
+fn Texture Texture.fromJson(&self, Object* data) {
+    self.sampler = data.get_int("sampler") ?? -1;
+    self.source = data.get_int("source") ?? -1;
+    return *self;
+}
 
-    if (try sampler) self.sampler = sampler;
-    if (try source) self.source = source;
+fn TextureInfo TextureInfo.fromJson(&self, Object* data) {
+    if (data == null) return TextureInfo {
+        -1,
+        0,
+        Vec2f{0,0},
+        Vec2f{0,0}
+    };
+
+    self.index = data.get_int("index") ?? -1;
+
+    @when_extended(data, TEXTURE_TRANSFORM_EXTENSION; Object* extension) {
+        Object*! offset = extension.get("offset");
+        Object*! scale = extension.get("scale");
+
+        if (try offset) self.offset = Vec2f {(float)offset.get_at(0).f, (float)offset.get_at(1).f};
+        if (try scale) self.scale = Vec2f {(float)scale.get_at(0).f, (float)scale.get_at(1).f};
+
+        self.rotation = (float)extension.get_float("rotation") ?? 0.0;
+    };
+
+    return *self;
 }
 
 fn void Sampler.fromJson(&self, Object* json) {
@@ -808,6 +836,11 @@ fn void Animation.fromJson(&self, Object* json) {
             if (try target) {
                 uint! node = target.get_int("node");
                 String! path = target.get_string("path");
+
+                @when_extended(target, ANIMATION_POINTER_EXTENSION; Object* extension) {
+                    String! pointer = extension.get_string("pointer");
+                    if (try pointer) io::printfn("%s", pointer);
+                };
 
                 if (try node) channel_data.target.node = node;
                 if (try path) {
@@ -1148,6 +1181,15 @@ fn Gltf! parse(InStream stream) {
          }
     }
 
+    // Build inverseBindMatrixes for skins
+    foreach (&skin: content.skins) {
+        Accessor skin_accessor = content.accessors[skin.inverseBindAccessor];
+        for (uint i; i < skin_accessor.count; i++) {
+            Matrix4f matrix = content.@castBuffer(skin_accessor, i, Matrix4f).transpose();
+            skin.inverseBindMatrices.push(matrix);
+        }
+    }
+
     return content;
 }
 
@@ -1158,6 +1200,7 @@ fn void Gltf.free(Gltf* self) {
     foreach (scene : self.scenes) scene.free();
     foreach (animation : self.animations) animation.free();
     foreach (accessor : self.accessors) accessor.free();
+
 
     self.cameras.free();
     self.accessors.free();
@@ -1249,7 +1292,7 @@ fn AnimationMixer Animation.mixer(self) {
     return copy;
 }
 
-fn void Gltf.animate(&self, AnimationMixer* animation, NanoDuration time) {
+fn void Gltf.run_animation(&self, AnimationMixer* animation, NanoDuration time) {
    double current_time = time.to_sec();
 
    foreach (index, &channel: animation.channels) {
@@ -1426,7 +1469,10 @@ macro Gltf.@castBuffer(&self, Accessor accessor, usz index, #type) {
     return bitcast(*(char[#type.sizeof]*)buffer.data[(start_offset + (index * index_offset))..], #type);
 }
 
-
+// Todo https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_animation_pointer
+// macro Gltf.get_pointer(self, String pointer) {
+//    return self.map["extensions"]!.map[extension];
+// }
 
 fn void Gltf.debugBuffer(Gltf* self, Accessor accessor) {
     BufferView bufferView = self.bufferViews[accessor.view];
@@ -1463,3 +1509,12 @@ fn void Animations.release(self) {
 fn Object*! Object.getExtension(self, String extension) {
    return self.map["extensions"]!.map[extension];
 }
+
+macro @when_extended(Object* object, String extension_name; @callback(Object* extension)) {
+    Object*! extension = object.get("extensions");
+    // Check if object has gltf extension, and then return it.
+    if (try extension && try extension.get(extension_name)) {
+        @callback(extension.get(extension_name)!!);   
+    }
+}
+

@@ -12,6 +12,7 @@ testrun
 *.ilk
 *.map
 *.exp
+build/*
 
 # Precompiled Headers
 *.gch
