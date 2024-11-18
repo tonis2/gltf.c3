@@ -853,6 +853,7 @@ fn void Animation.fromJson(&self, Object* json) {
 }
 
 fn void Animation.free(&self) {
+    foreach (channel: self.channels) channel.target.pointer.free();
     self.channels.free();
     self.samplers.free();
     self.name.free();
