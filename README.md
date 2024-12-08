@@ -10,6 +10,12 @@ GLTF parser for C3
 * Skin animations
 
 
+### Extensions
+* KHR_lights_punctual
+* KHR_texture_transform
+* KHR_animation_pointer
+
+
 
 ### How to use
 
