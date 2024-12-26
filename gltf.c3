@@ -301,7 +301,6 @@ struct Light {
     float range;
     float inner_cone_angle;
     float outer_cone_angle;
-    uint node;
 }
 
 struct AnimationValue {
@@ -337,7 +336,7 @@ fn void Node.fromJson(&self, Object* json) {
     self.camera = -1;
     self.skin = -1;
     self.light = -1;
-    self.rotation = {0,0,0,1};
+    self.rotation = {0,0,0,0};
     self.scale = {1,1,1};
     self.translation = {0,0,0};
     self.matrix = MATRIX4F_IDENTITY;
@@ -1106,8 +1105,8 @@ fn Gltf! parse(InStream stream) {
 
            if (data.hasLight()) {
                 Light* light = &content.lights[data.light];
-                // light.node = i;
                 light.position = data.translation;
+                // light.position = data.translation.transform(data.rotation.to_matrixf());
            }
         }
     }
@@ -1301,6 +1300,7 @@ fn AnimationChannels Gltf.load_animations(&self, uint[] indexes) {
             if (time_accessor.max.len() > 0) {
                 frame.max_time = time_accessor.max[0];
             } else {
+                frame.max_time = 1;
                 io::printfn("Animation has no max time");
             }
 
@@ -1476,13 +1476,10 @@ fn Matrix4f Node.globalMatrix(&self) {
 }
 
 fn char[]! parse_base64(char[] data, usz size) {
-    char[] buffer_data = mem::new_array(char, (usz)(size + 2));
-    Base64Decoder decoder;
-    decoder.init(base64::STD_ALPHABET, -1)!;
-    // Decode buffer from base64
-    // Offset base64 header
     usz offset = ((String)data).index_of_char(';')! + 8;
-    if (catch err = decoder.decode(data[offset..], buffer_data)) {
+    char[]! buffer_data = base64::decode(data[offset..], allocator: allocator::heap());
+
+    if (catch err = buffer_data) {
         io::printfn("Buffer parsing error: '%s'.", err);
         return ParseError.BROKEN_BUFFER?;
     };
