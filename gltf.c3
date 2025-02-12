@@ -16,10 +16,12 @@ def SkinList = List(<Skin>);
 def AttributeMap = HashMap(<String, usz>);
 def AnimationChannels = List(<AnimationChannel>);
 def Materials = List(<Material>);
+def NodeList = List(<Node>);
 
 const PUNCTUAL_LIGHT_EXTENSION = "KHR_lights_punctual";
 const TEXTURE_TRANSFORM_EXTENSION = "KHR_texture_transform";
 const ANIMATION_POINTER_EXTENSION = "KHR_animation_pointer";
+const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
 
 enum Targets {
     ARRAY_BUFFER,
@@ -129,7 +131,7 @@ fault ParseError
 
 struct Gltf {
     String name;
-    List(<Node>) nodes;
+    NodeList nodes;
     List(<Scene>) scenes;
     List(<Mesh>) meshes;
     List(<Buffer>) buffers;
@@ -146,6 +148,11 @@ struct Gltf {
     SkinList skins;
 }
 
+struct SceneBufferInfo {
+    usz size;
+    usz count;
+}
+
 struct Scene {
     String name;
     List(<uint>) nodes;
@@ -154,6 +161,7 @@ struct Scene {
 struct Node {
     Node* parent;
     String name;
+    AttributeMap attributes;
     int mesh;
     int camera;
     int skin;
@@ -175,7 +183,6 @@ struct Mesh {
     String name;
     usz scene;
     List(<Primitive>) primitives;
-    List(<uint>) children;
     List(<float>) weights;
 }
 
@@ -353,7 +360,20 @@ fn void Node.fromJson(&self, Object* json) {
     int! camera = json.get_int("camera");
     int! skin = json.get_int("skin");
 
-    Object*! light = json.getExtension(PUNCTUAL_LIGHT_EXTENSION);
+    @when_extended(json, PUNCTUAL_LIGHT_EXTENSION; Object* extension) {
+        self.light = extension.get_int("light")!!;
+    };
+
+    @when_extended(json, MESH_GPU_INSTANCING_EXTENSION; Object* extension) {
+        Object*! attributes = extension.get("attributes");
+        if (try attributes) {
+             @pool() {
+                foreach (key : attributes.map.tcopy_keys()) {
+                    self.attributes[key] = (usz)attributes.map[key]!!.f;
+                }
+             };
+        }
+    };
 
     if (try name) self.name = name.copy();
     if (try skin) self.skin = skin;
@@ -381,10 +401,6 @@ fn void Node.fromJson(&self, Object* json) {
     if (try children) {
         foreach (node : children.array) self.children.push((uint)node.f);
     }
-
-    if (try light) {
-        self.light = light.get_int("light")!!;
-    }
 }
 
 fn bool Node.hasMesh(self) {
@@ -407,6 +423,7 @@ fn void Node.free(self) {
     self.children.free();
     self.weights.free();
     self.name.free();
+    self.attributes.free();
 }
 
 fn void Mesh.fromJson(&self, Object* json) {
@@ -433,21 +450,23 @@ fn void Mesh.fromJson(&self, Object* json) {
             if (try material) data.attributes["material"] = material;
             if (try mode) data.attributes["mode"] = mode;
 
-            if (try attributes) {
-                foreach (key : attributes.map.tcopy_keys()) {
-                    data.attributes[key] = (usz)attributes.map[key]!!.f;
-                }
-            }
-
-            if (try targets) {
-                foreach (target : targets.array) {
-                    AttributeMap target_attibutes;
-                    foreach (key : target.map.tcopy_keys()) {
-                        target_attibutes[key] = (usz)target.map[key]!!.f;
+            @pool() {
+                if (try attributes) {
+                    foreach (key : attributes.map.tcopy_keys()) {
+                        data.attributes[key] = (usz)attributes.map[key]!!.f;
                     }
-                    data.targets.push(target_attibutes);
                 }
-            }
+
+                if (try targets) {
+                    foreach (target : targets.array) {
+                        AttributeMap target_attibutes;
+                        foreach (key : target.map.tcopy_keys()) {
+                            target_attibutes[key] = (usz)target.map[key]!!.f;
+                        }
+                        data.targets.push(target_attibutes);
+                    }
+                }
+            };
 
             self.primitives.push(data);
         }
@@ -461,7 +480,6 @@ fn void Primitive.free(&self) {
 }
 
 fn void Mesh.free(&self) {
-    self.children.free();
     foreach (primitive : self.primitives) primitive.free();
     self.primitives.free();
     self.name.free();
@@ -1061,31 +1079,18 @@ fn Gltf! parse(InStream stream) {
     Object*! textures = gltfJson.get("textures");
     Object*! animations = gltfJson.get("animations");
     Object*! skins = gltfJson.get("skins");
-    Object*! extensions = gltfJson.get("extensions");
-    Object*! extensionsUsed = gltfJson.get("extensionsUsed");
 
-    // Parse extensions used
-    if (try extensionsUsed) {
-        foreach (value : extensionsUsed.array) {
-            switch (value.s) {
-                case PUNCTUAL_LIGHT_EXTENSION : content.extensions.push(PUNCTUAL_LIGHT_EXTENSION);
-                default: {}
-            }
-        }
-    }
-
-    if (try extensions) {
-        Object*! lights = gltfJson.getExtension(PUNCTUAL_LIGHT_EXTENSION);
-
-        // Parse light extension
+    @when_extended(gltfJson, PUNCTUAL_LIGHT_EXTENSION; Object* extension) {
+        Object*! lights = extension.get("lights");
+            // Parse light extension
         if (try lights) {
-            foreach (light: lights.map["lights"]!!.array) {
-              Light data;
-              data.fromJson(light);
-              content.lights.push(data);
+            foreach (light: lights.array) {
+                Light data;
+                data.fromJson(light);
+                content.lights.push(data);
             }
         }
-    }
+    };
 
     // Parse scenes
     if (try scenes) {
@@ -1271,7 +1276,6 @@ fn AnimationChannels Gltf.load_animations(&self, uint[] indexes) {
     AnimationChannels channels;
     foreach (index: indexes) {
         Animation animation = self.animations[index];
-
         foreach (channel : animation.channels) {
             AnimationSampler sampler = animation.samplers[channel.sampler];
             Node animation_node = self.nodes[channel.target.node];
@@ -1349,7 +1353,7 @@ fn void AnimationChannels.run_animation(&self, Gltf* gltf, NanoDuration time) {
                                node.rotation = Quaternionf{.v = next_value};
                             }
                             case SCALE: {
-                                 node.scale = next_value.xyz;
+                               node.scale = next_value.xyz;
                             }
                             default: {}
                         }
@@ -1434,17 +1438,19 @@ fn uint Accessor.dataSize(Accessor* self) {
 }
 
 // Returns matrix from node transform, scale, rotation
-fn Matrix4f Node.localMatrix(&self) {
-    Quaternionf rotation = self.rotation.normalize();
+fn Matrix4f Node.localMatrix(&self) => to_matrix(self.translation, self.scale, self.rotation);
+
+fn Matrix4f to_matrix(Vec3f translation, Vec3f scale, Quaternionf rot) {
+    Quaternionf rotation = rot.normalize();
     float x = rotation.i;
     float y = rotation.j;
     float z = rotation.k;
     float w = rotation.l;
 
     return Matrix4f {
-        1 - 2*y*y - 2*z*z * self.scale.x, 2*x*y - 2*z*w, 2*x*z + 2*y*w, self.translation.x,
-        2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z * self.scale.y, 2*y*z - 2*x*w, self.translation.y,
-        2*x*z - 2*y*w, 2*y*z + 2*x*w , 1 - 2*x*x - 2*y*y * self.scale.z, self.translation.z,
+        (1 - 2*y*y - 2*z*z) * scale.x, 2*x*y - 2*z*w, 2*x*z + 2*y*w, translation.x,
+        2*x*y + 2*z*w, (1 - 2*x*x - 2*z*z) * scale.y, 2*y*z - 2*x*w, translation.y,
+        2*x*z - 2*y*w, 2*y*z + 2*x*w , (1 - 2*x*x - 2*y*y) * scale.z, translation.z,
         0.0, 0.0, 0.0, 1.0,
     };
 }
@@ -1475,7 +1481,7 @@ fn Matrix4f Node.globalMatrix(&self) {
     return global_matrix;
 }
 
-fn char[]! parse_base64(char[] data, usz size) {
+fn char[]! parse_base64(char[] data, usz size) @private {
     usz offset = ((String)data).index_of_char(';')! + 8;
     char[]! buffer_data = base64::decode(data[offset..], allocator: allocator::heap());
 
@@ -1501,6 +1507,34 @@ macro Gltf.@castBuffer(&self, Accessor accessor, usz index, #type) {
     usz start_offset = accessor.offset + bufferView.offset;
 
     return bitcast(*(char[#type.sizeof]*)buffer.data[(start_offset + (index * index_offset))..], #type);
+}
+
+fn usz Gltf.get_offset(&self, ulong attribute) {
+    Accessor accessor = self.accessors[attribute];
+    BufferView bufferView = self.bufferViews[accessor.view];
+    return accessor.offset + bufferView.offset;
+}
+
+fn BufferView Gltf.get_view(&self, ulong attribute) {
+    Accessor accessor = self.accessors[attribute];
+    BufferView bufferView = self.bufferViews[accessor.view];
+    return bufferView;
+}
+
+fn char* Gltf.get_data(&self, BufferView view) {
+    Buffer buffer = self.buffers[view.buffer];
+    return buffer.data[view.offset..];
+}
+
+fn List(<uint>) flatten_nodes(List(<uint>) nodes, Gltf data, List(<uint>)* list = null) {
+    if (list == null) list = List(<uint>){}.new_init();
+    foreach (index: nodes) {
+        Node node = data.nodes[index];
+        list.push(index);
+        flatten_nodes(node.children, data, list);
+    }
+
+    return *list;
 }
 
 fn void Gltf.debugBuffer(Gltf* self, Accessor accessor) {
@@ -1530,15 +1564,10 @@ fn void Gltf.debugBuffer(Gltf* self, Accessor accessor) {
     io::printf(" \n _______ \n%d");
 }
 
-fn Object*! Object.getExtension(self, String extension) {
-   return self.map["extensions"]!.map[extension];
-}
-
 fn void AnimationChannels.release(&self) {
     foreach (entry: self) entry.values.free();
     self.free();
 }
-
 
 macro @when_extended(Object* object, String extension_name; @callback(Object* extension)) {
     Object*! extension = object.get("extensions");
