@@ -14,6 +14,7 @@ GLTF parser for C3
 * KHR_lights_punctual
 * KHR_texture_transform
 * KHR_animation_pointer
+* EXT_mesh_gpu_instancing
 
 
 
