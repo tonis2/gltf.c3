@@ -6,8 +6,12 @@ import std::math;
 import gltf;
 import std::collections::list;
 
-def VertexList = List(<Vertex>);
-def IndexList = List(<ushort>);
+alias Vec2f @private = (float[<2>]);
+alias Vec3f @private = (float[<3>]);
+alias Vec4f @private = float[<4>];
+
+alias VertexList = List{Vertex};
+alias IndexList = List{ushort};
 
 struct Vertex {
     Vec3f pos;
@@ -16,7 +20,7 @@ struct Vertex {
 }
 
 
-fn void! test_glb() {
+fn void test_glb() {
 
     Gltf gltf_data = gltf::loadFile("test/truck.glb")!!;
     defer gltf_data.free();
@@ -36,7 +40,7 @@ fn void! test_glb() {
             Accessor index_accessor = gltf_data.accessors[primitive.attributes["indices"]!!];
 
             for (uint i = 0; i < pos_accessor.count ; i += 1) {
-                vertices.push(Vertex {
+                vertices.push({
                     gltf_data.@castBuffer(pos_accessor, i, Vec3f),
                     gltf_data.@castBuffer(tex_accessor, i, Vec2f),
                     gltf_data.@castBuffer(normal_accessor, i, Vec3f)
@@ -48,7 +52,7 @@ fn void! test_glb() {
     }
     assert(vertices.len() == 3995);
     assert(indices.len() == 4);
-    assert(math::round_to_decimals((float[<3>])vertices[0].pos, 4)  == math::round_to_decimals(float[<3>] {-0.044543, 1.018000, 0.166238}, 4));
-    assert(math::round_to_decimals((float[<2>])vertices[0].tex, 4)  == math::round_to_decimals(float[<2>] {0.711914, 0.120246}, 4));
-    assert(math::round_to_decimals((float[<3>])vertices[0].normal, 4)  == math::round_to_decimals(float[<3>] {-0.000004, 1.000000, -0.000000}, 4));
+    assert(math::round_to_decimals(((float[<3>]))vertices[0].pos, 4)  == math::round_to_decimals((float[<3>]) {-0.044543, 1.018000, 0.166238}, 4));
+    assert(math::round_to_decimals(((float[<2>]))vertices[0].tex, 4)  == math::round_to_decimals((float[<2>]) {0.711914, 0.120246}, 4));
+    assert(math::round_to_decimals(((float[<3>]))vertices[0].normal, 4)  == math::round_to_decimals((float[<3>]) {-0.000004, 1.000000, -0.000000}, 4));
 }
