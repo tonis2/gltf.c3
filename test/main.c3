@@ -30,8 +30,7 @@ fn void test_glb() {
 
     IndexList indices;
     defer indices.free();
-
-
+    
     foreach (mesh : gltf_data.meshes) {
         foreach (index, primitive: mesh.primitives) {
             Accessor pos_accessor = gltf_data.accessors[primitive.attributes["POSITION"]!!];
