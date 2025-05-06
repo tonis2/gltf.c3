@@ -45,13 +45,13 @@ Loop over meshes and load vertices / indices
 
             for (uint i = 0; i < pos_accessor.count ; i += 1) {
                 vertices.push(Vertex {
-                    gltf_data.@castBuffer(pos_accessor, i, Vec3f),
-                    gltf_data.@castBuffer(tex_accessor, i, Vec2f),
-                    gltf_data.@castBuffer(normal_accessor, i, Vec3f)
+                    gltf_data.@cast_buffer(pos_accessor, i, Vec3f),
+                    gltf_data.@cast_buffer(tex_accessor, i, Vec2f),
+                    gltf_data.@cast_buffer(normal_accessor, i, Vec3f)
                 });
             }
 
-             indices.push(gltf_data.@castBuffer(index_accessor, 1, ushort));
+             indices.push(gltf_data.@cast_buffer(index_accessor, 1, ushort));
         }
     }
 ```
