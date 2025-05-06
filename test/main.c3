@@ -25,6 +25,9 @@ fn void test_glb() {
     Gltf gltf_data = gltf::loadFile("test/truck.glb")!!;
     defer gltf_data.free();
 
+    assert(gltf_data.textures.len() == 2);
+    assert(gltf_data.materials.len() == 4);
+
     VertexList vertices;
     defer vertices.free();
 
@@ -40,15 +43,17 @@ fn void test_glb() {
 
             for (uint i = 0; i < pos_accessor.count ; i += 1) {
                 vertices.push({
-                    gltf_data.@castBuffer(pos_accessor, i, Vec3f),
-                    gltf_data.@castBuffer(tex_accessor, i, Vec2f),
-                    gltf_data.@castBuffer(normal_accessor, i, Vec3f)
+                    gltf_data.@cast_buffer(pos_accessor, i, Vec3f),
+                    gltf_data.@cast_buffer(tex_accessor, i, Vec2f),
+                    gltf_data.@cast_buffer(normal_accessor, i, Vec3f)
                 });
             }
 
-             indices.push(gltf_data.@castBuffer(index_accessor, 1, ushort));
+             indices.push(gltf_data.@cast_buffer(index_accessor, 1, ushort));
         }
     }
+
+  
     assert(vertices.len() == 3995);
     assert(indices.len() == 4);
     assert(math::round_to_decimals(((float[<3>]))vertices[0].pos, 4)  == math::round_to_decimals((float[<3>]) {-0.044543, 1.018000, 0.166238}, 4));
