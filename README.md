@@ -51,7 +51,7 @@ Loop over meshes and load vertices / indices
                 });
             }
 
-             indices.push(gltf_data.@cast_buffer(index_accessor, 1, ushort));
+            indices.push(gltf_data.@cast_buffer(index_accessor, 1, ushort));
         }
     }
 ```

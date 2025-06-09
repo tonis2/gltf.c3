@@ -24,10 +24,11 @@ fn void test_glb() {
 
     Gltf gltf_data = gltf::loadFile("test/truck.glb")!!;
     defer gltf_data.free();
-
+   
     assert(gltf_data.textures.len() == 2);
     assert(gltf_data.materials.len() == 4);
-
+    assert(gltf_data.nodes.len() == 6);
+    
     VertexList vertices;
     defer vertices.free();
 
@@ -49,7 +50,7 @@ fn void test_glb() {
                 });
             }
 
-             indices.push(gltf_data.@cast_buffer(index_accessor, 1, ushort));
+            indices.push(gltf_data.@cast_buffer(index_accessor, 1, ushort));
         }
     }
 
