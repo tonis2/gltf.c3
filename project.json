@@ -2,7 +2,7 @@
 	"langrev": "1",
 	"warnings": ["no-unused"],
 	"authors": [],
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"dependency-search-paths": [],
 	"dependencies": [],
 	"features": [],
