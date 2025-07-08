@@ -350,9 +350,9 @@ fn void Node.from_json(&self, Object* json) {
     Object*? extras = json.get("extras");
 
     if (try extras) {
-        foreach (key : extras.map.keys(mem)) {
-            self.extras.set(key, extras.map[key]!!.s.copy(mem));
-        }
+        extras.map.@each(;String key, Object* value) {
+            self.extras.set(key, value.s.copy(mem));
+        };
     }
 
     int? mesh = json.get_int("mesh");
@@ -366,9 +366,9 @@ fn void Node.from_json(&self, Object* json) {
     @when_extended(json, MESH_GPU_INSTANCING_EXTENSION; Object* extension) {
         Object*? attributes = extension.get("attributes");
         if (try attributes) {
-            foreach (key : attributes.map.keys(mem)) {
-                self.attributes.set(key, (usz)attributes.map[key]!!.f);
-            }
+            attributes.map.@each(;String key, Object* value) {
+                self.attributes.set(key, (uint)value.f);
+            };
         }
     };
 
@@ -1428,15 +1428,13 @@ macro Gltf.@cast_buffer(&self, Accessor accessor, usz index, #type) {
     return bitcast(*(char[#type.sizeof]*)buffer.data[(start_offset + (index * index_offset))..], #type);
 }
 
-// fn void* Gltf.data_ptr(&self, Accessor accessor, usz index) {
-//     BufferView bufferView = self.bufferViews[accessor.view];
-//     Buffer buffer = self.buffers[bufferView.buffer];
-//     usz index_offset = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
-//     usz start_offset = accessor.offset + bufferView.offset;
-
-//     return mem::aligned_pointer((void*)buffer.data + start_offset + (index * index_offset), 16);
-// }
-
+fn void* Gltf.get_data_array(&self, ulong accessor_index) {
+    Accessor accessor = self.accessors[accessor_index];
+    BufferView bufferView = self.bufferViews[accessor.view];
+    Buffer buffer = self.buffers[bufferView.buffer];
+    usz start_offset = accessor.offset + bufferView.offset;
+    return buffer.data[start_offset..(start_offset + bufferView.byteLength)];
+}
 
 fn usz Gltf.get_offset(&self, ulong attribute) {
     Accessor accessor = self.accessors[attribute];
@@ -1453,6 +1451,47 @@ fn BufferView Gltf.get_view(&self, ulong attribute) {
 fn char* Gltf.get_data(&self, BufferView view) {
     Buffer buffer = self.buffers[view.buffer];
     return buffer.data[view.offset..];
+}
+
+fn usz Vec3f.hash(&self) {
+    usz h1 = (usz)self.x;
+    usz h2 = (usz)self.y;
+    usz h3 = (usz)self.z;
+    return (usz)h1.hash() ^ ((usz)h2.hash() << 1) ^ ((usz)h3.hash() << 2);
+}
+
+macro void? Gltf.@get_positions(Gltf* self, String name, #type; @callback(position)) {
+    HashMap{usz, bool} unique_map;
+    List{Vec3f} positions;
+
+    defer {
+        positions.free();
+        unique_map.free();
+    }
+
+    Mesh mesh = self.find_mesh(name)!;
+    foreach (uint prim_index, primitive: mesh.primitives) {
+        Accessor index_accessor = self.accessors[primitive.attributes["indices"]!!];
+        Accessor pos_accessor = self.accessors[primitive.attributes["POSITION"]!!];
+  
+        for (usz i = 0; i < pos_accessor.count; i++) {
+            Vec3f position = self.@cast_buffer(pos_accessor, i, Vec3f);
+            if (unique_map.has_key(position.hash()) == false) {
+                positions.push(position);
+                unique_map.set(position.hash(), true);
+            }
+        }
+
+        $if #type.kindof == ARRAY:
+            for (usz i = 0; i < positions.len(); i += #type.len) {
+                $typefrom(#type.typeid) value;
+                for (usz j = 0; j < #type.len; j++) value[j] = positions[i + j];
+                @callback(value);
+            };
+        $else
+            for (usz i = 0; i < positions.len(); i += 1) @callback(positions[i]);
+        $endif
+    }
 }
 
 fn void Gltf.debug_buffer(Gltf* self, Accessor accessor) {
