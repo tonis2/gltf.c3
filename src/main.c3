@@ -158,6 +158,8 @@ struct Scene {
 
 struct Node {
     Node* parent;
+    Collider* collider;
+    Motion* motion;
     String name;
     AttributeMap attributes;
     int mesh;
@@ -371,6 +373,21 @@ fn void Node.from_json(&self, Object* json) {
         }
     };
 
+    @when_extended(json, RIGID_BODIES_EXTENSION; Object* extension) {
+        Object*? motion = extension.get("motion");
+        Object*? collider = extension.get("collider");
+        Object*? trigger = extension.get("trigger");
+        Object*? joint = extension.get("joint");
+
+        if (try collider) {
+            self.collider = mem::new(Collider, (Collider){}.from_json(collider));
+        }
+
+        if (try motion) {
+            self.motion = mem::new(Motion, (Motion){}.from_json(motion));
+        }
+    };
+
     if (try name) self.name = name.copy(mem);
     if (try skin) self.skin = skin;
     if (try mesh) self.mesh = mesh;
@@ -410,6 +427,8 @@ fn void Node.free(&self) {
     self.name.free(mem);
     self.attributes.free();
     self.extras.free();
+    if (self.motion != null) mem::free(self.motion);
+    if (self.collider != null) mem::free(self.collider);
 }
 
 fn void Mesh.from_json(&self, Object* json) {

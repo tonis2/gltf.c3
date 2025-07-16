@@ -35,7 +35,6 @@ enum PhysicsCombine {
     MULTIPLY
 }
 
-
 struct Shape {
     Vec4f size;
     float height;
@@ -82,6 +81,83 @@ struct CollisionFilter {
    List{String} systems;
    List{String} not_colliding;
    List{String} colliding_with;
+}
+
+struct Motion {
+    bool is_kinematic;
+    float mass;
+    float gravity_factor;
+    Vec3f mass_center;
+    Vec3f inertia_diagonal;
+    Vec4f inertia_orientation;
+    Vec3f linear_velocity;
+    Vec3f angular_velocity;
+}
+
+struct Collider {
+    bool convex_hull;
+    int shape;
+    int node;
+    int material;
+    int collision_filter;
+}
+
+fn Collider Collider.from_json(self, Object* json) {
+    Object*? geometry = json.get("geometry");
+
+    if (try geometry) {
+        self.convex_hull = geometry.get_bool("convexHull") ?? false;
+        self.shape = geometry.get_int("shape") ?? -1;
+        self.node = geometry.get_int("node") ?? -1;
+    }
+ 
+    self.material = json.get_int("physicsMaterial") ?? -1;
+    self.collision_filter = json.get_int("collisionFilter") ?? -1;
+
+    return self;
+}
+
+fn Motion Motion.from_json(self, Object* json) {
+    Object*? center_mass = json.get("centerOfMass");
+    Object*? inertia_diagonal = json.get("inertiaDiagonal");
+    Object*? inertia_orientation = json.get("inertiaOrientation");
+    Object*? linear_velocity = json.get("linearVelocity");
+    Object*? angular_velocity = json.get("linearVelocity");
+
+    if (try center_mass) {
+        foreach (usz i, mass: center_mass.array) {
+            self.mass_center[i] = (float)mass.f;
+        }
+    }
+
+    if (try inertia_diagonal) {
+        foreach (usz i, inertia: inertia_diagonal.array) {
+            self.inertia_diagonal[i] = (float)inertia.f;
+        }
+    }
+
+    if (try inertia_orientation) {
+        foreach (usz i, inertia: inertia_orientation.array) {
+            self.inertia_orientation[i] = (float)inertia.f;
+        }
+    }
+
+    if (try linear_velocity) {
+        foreach (usz i, velocity: linear_velocity.array) {
+            self.linear_velocity[i] = (float)velocity.f;
+        }
+    }
+
+    if (try angular_velocity) {
+        foreach (usz i, velocity: angular_velocity.array) {
+            self.angular_velocity[i] = (float)velocity.f;
+        }
+    }
+
+    self.mass = (float)json.get_float("mass") ?? 0;
+    self.gravity_factor = (float)json.get_float("gravityFactor") ?? 0;
+
+    return self;
 }
 
 fn CollisionFilter CollisionFilter.from_json(self, Object* json) {
