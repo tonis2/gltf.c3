@@ -1,6 +1,7 @@
 
 {
   "provides" : "gltf",
+  "sources": ["src/main.c3", "src/rigid_bodies.c3", "src/helpers.c3"],
   "targets" : {
     "macos-x64" : {},
     "linux-x64" : {},

@@ -8,14 +8,14 @@
 	"features": [],
 	"script-dir": "./",
 	"linked-libraries": [],
-	"sources": ["./test/*", "./gltf.c3"],
+	"sources": ["./test/*", "./src/*"],
 	"targets": {
 		"main": {
 			"type": "executable"
 		},
 		"zip": {
 			"type": "prepare",
-			"exec": ["zip gltf.c3l ./*.c3 ./manifest.json"]
+			"exec": ["zip ./gltf.c3l ./src/*.c3 ./manifest.json"]
 		}
 	},
 	"output": "./build"
