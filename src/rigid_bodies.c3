@@ -36,7 +36,7 @@ enum PhysicsCombine {
 }
 
 struct Shape {
-    Vec4f size;
+    Vec3f size;
     float height;
     float radius_bottom;
     float radius_top;
@@ -194,10 +194,9 @@ fn Shape Shape.from_json(self, Object* json) {
             case "box": {
                 Object*? box = json.get("box");
                 Object*? size = box.get("size");
-                Vec4f size_value = @ok(size) ? { (float)size.get_at(0).f!!, (float)size.get_at(1).f!!, (float)size.get_at(2).f!!, 0} : {0,0,0,0};
                 self = {
                     .type = BOX,
-                    .size = size_value
+                    .size = @ok(size) ? { (float)size.get_at(0).f!!, (float)size.get_at(1).f!!, (float)size.get_at(2).f!!} : {0,0,0}
                 };
             }
             case "sphere": {
