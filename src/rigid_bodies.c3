@@ -102,6 +102,11 @@ struct Collider {
     int collision_filter;
 }
 
+fn bool Collider.has_shape(self) => self.shape > -1;
+fn bool Collider.has_node(self) => self.node > -1;
+fn bool Collider.has_material(self) => self.material > -1;
+fn bool Collider.has_filter(self) => self.collision_filter > -1;
+
 fn Collider Collider.from_json(self, Object* json) {
     Object*? geometry = json.get("geometry");
 
@@ -320,4 +325,20 @@ fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json) {
     }
 
     return self;
+}
+
+macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f position)) {
+    Node node = self.nodes[node_index];
+
+    foreach (i: node.children) {
+        Node collision_node = self.nodes[i];
+        if (collision_node.collider != null && collision_node.collider.node > -1) {
+            Node mesh_node = self.nodes[collision_node.collider.node];
+            Mesh collision_mesh = self.meshes[mesh_node.mesh];
+         
+            self.@get_positions(collision_mesh, Vec3f; Vec3f position) {
+                @callback(position);
+            }!;
+        }
+    }
 }

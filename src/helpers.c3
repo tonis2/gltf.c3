@@ -148,6 +148,14 @@ fn char* Gltf.get_data(&self, BufferView view) {
     return buffer.data[view.offset..];
 }
 
+// fn usz Vec3f.hash(&self, int mult = 1000) {
+//     int h1 = (int)(self.x * mult) + mult;
+//     int h2 = (int)(self.y * mult) + mult;
+//     int h3 = (int)(self.z * mult) + mult;
+//     int mult_1 = (mult << 1) + 1;
+//     return (usz)((h1 * mult_1  * mult_1) + (h2 * mult_1) + h3);
+// }
+
 fn usz Vec3f.hash(&self) {
     usz h1 = (usz)self.x;
     usz h2 = (usz)self.y;
@@ -155,7 +163,7 @@ fn usz Vec3f.hash(&self) {
     return (usz)h1.hash() ^ ((usz)h2.hash() << 1) ^ ((usz)h3.hash() << 2);
 }
 
-macro void? Gltf.@get_positions(Gltf* self, String name, #type; @callback(position)) {
+macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position)) {
     HashMap{usz, bool} unique_map;
     List{Vec3f} positions;
 
@@ -164,7 +172,6 @@ macro void? Gltf.@get_positions(Gltf* self, String name, #type; @callback(positi
         unique_map.free();
     }
 
-    Mesh mesh = self.find_mesh(name)!;
     foreach (uint prim_index, primitive: mesh.primitives) {
         Accessor index_accessor = self.accessors[primitive.attributes["indices"]!!];
         Accessor pos_accessor = self.accessors[primitive.attributes["POSITION"]!!];
@@ -178,9 +185,11 @@ macro void? Gltf.@get_positions(Gltf* self, String name, #type; @callback(positi
         }
 
         $if #type.kindof == ARRAY:
-            for (usz i = 0; i < positions.len(); i += #type.len) {
+            for (usz i = 0; i < positions.len() - 1; i += #type.len) {
                 $typefrom(#type.typeid) value;
-                for (usz j = 0; j < #type.len; j++) value[j] = positions[i + j];
+                for (usz j = 0; j < #type.len; j++) {
+                    value[j] = positions[i + j];
+                };
                 @callback(value);
             };
         $else
