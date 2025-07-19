@@ -148,52 +148,42 @@ fn char* Gltf.get_data(&self, BufferView view) {
     return buffer.data[view.offset..];
 }
 
-// fn usz Vec3f.hash(&self, int mult = 1000) {
-//     int h1 = (int)(self.x * mult) + mult;
-//     int h2 = (int)(self.y * mult) + mult;
-//     int h3 = (int)(self.z * mult) + mult;
-//     int mult_1 = (mult << 1) + 1;
-//     return (usz)((h1 * mult_1  * mult_1) + (h2 * mult_1) + h3);
-// }
-
-fn usz Vec3f.hash(&self) {
-    usz h1 = (usz)self.x;
-    usz h2 = (usz)self.y;
-    usz h3 = (usz)self.z;
-    return (usz)h1.hash() ^ ((usz)h2.hash() << 1) ^ ((usz)h3.hash() << 2);
-}
+// fn int Vec3f.hash(&self) => ((int)self.x * 73856093) ^ ((int)self.y * 19349663) ^ ((int)self.z * 83492791);
 
 macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position)) {
-    HashMap{usz, bool} unique_map;
     List{Vec3f} positions;
+    List{ushort} indices;
 
     defer {
         positions.free();
-        unique_map.free();
+        indices.free();
     }
 
     foreach (uint prim_index, primitive: mesh.primitives) {
         Accessor index_accessor = self.accessors[primitive.attributes["indices"]!!];
         Accessor pos_accessor = self.accessors[primitive.attributes["POSITION"]!!];
-  
+
         for (usz i = 0; i < pos_accessor.count; i++) {
             Vec3f position = self.@cast_buffer(pos_accessor, i, Vec3f);
-            if (unique_map.has_key(position.hash()) == false) {
-                positions.push(position);
-                unique_map.set(position.hash(), true);
-            }
+            positions.push(position);
+        }
+
+        for (usz i = 0; i < index_accessor.count; i++) {
+            ushort index = self.@cast_buffer(index_accessor, i, ushort);
+            indices.push(index);
         }
 
         $if #type.kindof == ARRAY:
-            for (usz i = 0; i < positions.len() - 1; i += #type.len) {
+            for (usz i = 0; i < indices.len(); i += #type.len) {
                 $typefrom(#type.typeid) value;
                 for (usz j = 0; j < #type.len; j++) {
-                    value[j] = positions[i + j];
+                    usz index = indices[i + j];
+                    value[j] = positions[index];
                 };
                 @callback(value);
             };
         $else
-            for (usz i = 0; i < positions.len(); i += 1) @callback(positions[i]);
+            foreach (index: indices) @callback(positions[index]);
         $endif
     }
 }
