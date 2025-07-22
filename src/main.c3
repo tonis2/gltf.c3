@@ -336,7 +336,7 @@ fn void Node.from_json(&self, Object* json) {
     self.camera = -1;
     self.skin = -1;
     self.light = -1;
-    self.rotation = {0,0,0,0};
+    self.rotation = {0,0,0,1};
     self.scale = {1.0, 1.0, 1.0};
     self.translation = {0, 0, 0};
     self.matrix = MATRIX4F_IDENTITY;
