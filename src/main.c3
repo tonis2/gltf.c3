@@ -1063,6 +1063,7 @@ fn Gltf? parse(InStream stream) {
     }
 
     if (catch err = gltfJson) {
+        io::printfn("%s", err);
         return JSON_PARSE_FAILED?;
     }
 
@@ -1289,8 +1290,8 @@ fn void Gltf.free(Gltf* self) {
     foreach (animation : self.animations) animation.free();
     foreach (joint : self.physics_joints) joint.free();
     foreach (filter: self.collision_filters) filter.free();
-    // foreach (accessor : self.accessors) accessor.free();
-
+    foreach (image: self.images) image.free();
+    
     self.collision_filters.free();
     self.physics_materials.free();
     self.physics_joints.free();
@@ -1301,6 +1302,7 @@ fn void Gltf.free(Gltf* self) {
     self.buffers.free();
     self.scenes.free();
     self.nodes.free();
+    
     self.images.free();
     self.meshes.free();
     self.materials.free();
