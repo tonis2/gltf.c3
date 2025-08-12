@@ -89,7 +89,7 @@ struct Motion {
     float gravity_factor;
     Vec3f mass_center;
     Vec3f inertia_diagonal;
-    Vec4f inertia_orientation;
+    Quaternionf inertia_orientation;
     Vec3f linear_velocity;
     Vec3f angular_velocity;
 }
@@ -143,7 +143,7 @@ fn Motion Motion.from_json(self, Object* json) {
 
     if (try inertia_orientation) {
         foreach (usz i, inertia: inertia_orientation.array) {
-            self.inertia_orientation[i] = (float)inertia.f;
+            self.inertia_orientation.v[i] = (float)inertia.f;
         }
     }
 
@@ -161,7 +161,6 @@ fn Motion Motion.from_json(self, Object* json) {
 
     self.mass = (float)json.get_float("mass") ?? 0;
     self.gravity_factor = (float)json.get_float("gravityFactor") ?? 0;
-
     return self;
 }
 
