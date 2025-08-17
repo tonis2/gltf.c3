@@ -1377,12 +1377,21 @@ fn uint Accessor.dataSize(Accessor* self) {
 fn Matrix4f Node.local_matrix(&self) => to_matrix(self.translation, self.scale, self.rotation);
 
 fn Matrix4f to_matrix(Vec3f translation, Vec3f scale, Quaternionf rotation) {
-    return (Matrix4f) {
-        scale.x, 0, 0, translation.x,
-        0, scale.y, 0, translation.y,
-        0, 0, scale.z, translation.z,
+    Matrix4f translation_matrix = {
+        1, 0, 0, translation.x,
+        0, 1, 0, translation.y,
+        0, 0, 1, translation.z,
         0.0, 0.0, 0.0, 1.0,
-    }.mul(rotation.to_matrixf());
+    };
+
+    Matrix4f scale_matrix = {
+        scale.x, 0, 0, 0,
+        0, scale.y, 0, 0,
+        0, 0, scale.z, 0,
+        0.0, 0.0, 0.0, 1.0,
+    };
+    
+   return translation_matrix * rotation.to_matrixf() * scale_matrix;
 }
 
 fn Matrix4f Node.global_matrix(self) {
