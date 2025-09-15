@@ -117,8 +117,6 @@ enum MinFilter {
     LINEAR_MIPMAP_LINEAR,
 }
 
-
-
 faultdef FILE_NOT_FOUND,
     FILE_NOT_READABLE,
     JSON_PARSE_FAILED,
@@ -143,12 +141,16 @@ struct Gltf {
     List{Animation} animations;
     List{Light} lights;
     List{String} extensions;
+
+    Materials materials;
+    SkinList skins;
+
     List{Shape} shapes;
     List{PhysicsJoint} physics_joints;
     List{PhysicsMaterial} physics_materials;
     List{CollisionFilter} collision_filters;
-    Materials materials;
-    SkinList skins;
+    List{Collider} colliders;
+    List{Motion} motions;
 }
 
 struct Scene {
@@ -157,15 +159,19 @@ struct Scene {
 }
 
 struct Node {
-    Node* parent;
-    Collider* collider;
-    Motion* motion;
-    String name;
-    AttributeMap attributes;
     int mesh;
     int camera;
     int skin;
     int light;
+
+    int collider;
+    int motion;
+    int physics_joint;
+
+    int joint;
+    int connected_node;
+    bool enable_collision;
+
     Quaternionf rotation;
     Matrix4f matrix;
     Vec3f scale;
@@ -173,6 +179,10 @@ struct Node {
     List{uint} children;
     List{float} weights;
     HashMap{String, String} extras;
+
+    Node* parent;
+    String name;
+    AttributeMap attributes;
 }
 
 struct Primitive {
@@ -331,11 +341,15 @@ fn void Scene.free(self) {
     self.name.free(mem);
 }
 
-fn void Node.from_json(&self, Object* json) {
+fn void Node.from_json(&self, Object* json, Gltf* content) {
     self.mesh = -1;
     self.camera = -1;
     self.skin = -1;
     self.light = -1;
+    self.joint = -1;
+    self.motion = -1;
+    self.collider = -1;
+    
     self.rotation = {0,0,0,1};
     self.scale = {1.0, 1.0, 1.0};
     self.translation = {0, 0, 0};
@@ -380,11 +394,19 @@ fn void Node.from_json(&self, Object* json) {
         Object*? joint = extension.get("joint");
 
         if (try collider) {
-            self.collider = mem::new(Collider, (Collider){}.from_json(collider));
+            self.collider = (int)content.colliders.len();
+            content.colliders.push((Collider){}.from_json(collider));
         }
 
         if (try motion) {
-            self.motion = mem::new(Motion, (Motion){}.from_json(motion));
+            self.motion = (int)content.motions.len();
+            content.motions.push((Motion){}.from_json(motion));
+        }
+
+        if (try joint) {
+            self.joint = joint.get_int("joint") ?? -1;
+            self.connected_node = joint.get_int("connectedNode") ?? -1;
+            self.enable_collision = joint.get_bool("enableCollision") ?? false;
         }
     };
 
@@ -420,6 +442,9 @@ fn bool Node.has_mesh(self) => self.mesh != -1;
 fn bool Node.has_skin(self) => self.skin != -1;
 fn bool Node.has_camera(self) => self.camera != -1;
 fn bool Node.has_light(self) => self.light != -1;
+fn bool Node.has_motion(self) => self.motion != -1;
+fn bool Node.has_collider(self) => self.collider != -1;
+fn bool Node.has_joint(self) => self.joint != -1;
 
 fn void Node.free(&self) {
     self.children.free();
@@ -427,8 +452,6 @@ fn void Node.free(&self) {
     self.name.free(mem);
     self.attributes.free();
     self.extras.free();
-    if (self.motion != null) mem::free(self.motion);
-    if (self.collider != null) mem::free(self.collider);
 }
 
 fn void Mesh.from_json(&self, Object* json) {
@@ -1141,7 +1164,7 @@ fn Gltf? parse(InStream stream) {
     if (try nodes) {
         foreach (uint i, node : nodes.array) {
            Node data;
-           data.from_json(node);
+           data.from_json(node, &content);
            content.nodes.push(data);
 
            if (data.has_light()) {
@@ -1291,10 +1314,13 @@ fn void Gltf.free(Gltf* self) {
     foreach (joint : self.physics_joints) joint.free();
     foreach (filter: self.collision_filters) filter.free();
     foreach (image: self.images) image.free();
-    
+
+    self.colliders.free();    
+    self.motions.free();
     self.collision_filters.free();
     self.physics_materials.free();
     self.physics_joints.free();
+
     self.shapes.free();
     self.cameras.free();
     self.accessors.free();
@@ -1391,7 +1417,7 @@ fn Matrix4f to_matrix(Vec3f translation, Vec3f scale, Quaternionf rotation) {
         0.0, 0.0, 0.0, 1.0,
     };
     
-   return translation_matrix * rotation.to_matrixf() * scale_matrix;
+    return translation_matrix * rotation.to_matrixf() * scale_matrix;
 }
 
 fn Matrix4f Node.global_matrix(self) {

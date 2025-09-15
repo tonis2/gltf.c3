@@ -87,6 +87,7 @@ struct Motion {
     bool is_kinematic;
     float mass;
     float gravity_factor;
+    
     Vec3f mass_center;
     Vec3f inertia_diagonal;
     Quaternionf inertia_orientation;
@@ -160,7 +161,7 @@ fn Motion Motion.from_json(self, Object* json) {
     }
 
     self.mass = (float)json.get_float("mass") ?? 0;
-    self.gravity_factor = (float)json.get_float("gravityFactor") ?? 0;
+    self.gravity_factor = (float)json.get_float("gravityFactor") ?? 1;
     return self;
 }
 
