@@ -166,7 +166,6 @@ struct Node {
 
     int collider;
     int motion;
-    int physics_joint;
 
     int joint;
     int connected_node;

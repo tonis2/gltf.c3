@@ -44,9 +44,21 @@ struct Shape {
     ShapeType type;
 }
 
+enum Axis : const int {
+   X,
+   Y,
+   Z,
+   EMPTY = -1,
+}
+
+enum LimitType : const uint  {
+    LINEAR,
+    ANGULAR
+}
+
 struct Limit {
-    Vec3f linear_axes;
-    Vec3f angular_axes;
+    LimitType type;
+    Axis[3] axes;
     float min;
     float max;
     float stiffness;
@@ -87,6 +99,8 @@ struct Motion {
     bool is_kinematic;
     float mass;
     float gravity_factor;
+    float linear_dampening;
+    float angular_dampening;
     
     Vec3f mass_center;
     Vec3f inertia_diagonal;
@@ -259,14 +273,16 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
             Object*? angular_axes = limit.get("angularAxes");
 
             if (try linear_axes) {
+                joint_limit.type = LINEAR;
                 foreach (usz i, axis: linear_axes.array) {
-                    joint_limit.linear_axes[i] = (float)axis.f;
+                    joint_limit.axes[i] = ((Axis)(int)axis.f);
                 }
             }
 
             if (try angular_axes) {
+                joint_limit.type = ANGULAR;
                 foreach (usz i, axis: angular_axes.array) {
-                    joint_limit.angular_axes[i] = (float)axis.f;
+                    joint_limit.axes[i] = ((Axis)(int)axis.f);
                 }
             }
 
