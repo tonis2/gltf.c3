@@ -264,10 +264,11 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 
     if (try limits) {
         foreach (limit: limits.array) {
-            Limit joint_limit;
-
-            joint_limit.min = (float)limit.get_float("min") ?? 0;
-            joint_limit.max = (float)limit.get_float("max") ?? 0;
+            Limit joint_limit = { 
+                .axes = {-1, -1, -1},
+                .min = (float)limit.get_float("min") ?? 0,
+                .max = (float)limit.get_float("max") ?? 0,
+            };
 
             Object*? linear_axes = limit.get("linearAxes");
             Object*? angular_axes = limit.get("angularAxes");
