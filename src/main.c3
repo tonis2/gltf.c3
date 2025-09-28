@@ -171,6 +171,8 @@ struct Node {
     int connected_node;
     bool enable_collision;
 
+    uint index;
+
     Quaternionf rotation;
     Matrix4f matrix;
     Vec3f scale;
@@ -348,6 +350,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
     self.joint = -1;
     self.motion = -1;
     self.collider = -1;
+    self.index = (uint)content.nodes.len();
     
     self.rotation = {0,0,0,1};
     self.scale = {1.0, 1.0, 1.0};

@@ -58,7 +58,7 @@ enum LimitType : const uint  {
 
 struct Limit {
     LimitType type;
-    Axis[3] axes;
+    Vec3f axes;
     float min;
     float max;
     float stiffness;
@@ -265,7 +265,7 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
     if (try limits) {
         foreach (limit: limits.array) {
             Limit joint_limit = { 
-                .axes = {-1, -1, -1},
+                .axes = {0, 0, 0},
                 .min = (float)limit.get_float("min") ?? 0,
                 .max = (float)limit.get_float("max") ?? 0,
             };
@@ -275,15 +275,23 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 
             if (try linear_axes) {
                 joint_limit.type = LINEAR;
-                foreach (usz i, axis: linear_axes.array) {
-                    joint_limit.axes[i] = ((Axis)(int)axis.f);
+                foreach (axis: linear_axes.array) {
+                    switch ((Axis)axis.f) {
+                        case X: joint_limit.axes.x = 1;
+                        case Y: joint_limit.axes.y = 1;
+                        case Z: joint_limit.axes.z = 1;
+                    }
                 }
             }
 
             if (try angular_axes) {
                 joint_limit.type = ANGULAR;
-                foreach (usz i, axis: angular_axes.array) {
-                    joint_limit.axes[i] = ((Axis)(int)axis.f);
+                foreach (axis: angular_axes.array) {
+                   switch ((Axis)axis.f) {
+                        case X: joint_limit.axes.x = 1;
+                        case Y: joint_limit.axes.y = 1;
+                        case Z: joint_limit.axes.z = 1;
+                    }
                 }
             }
 
@@ -358,4 +366,10 @@ macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f
             }!;
         }
     }
+}
+
+
+fn Vec3f decompose_joint(Node body, Node joint) {
+    Matrix4f decompose_matrix = body.global_matrix().inverse()!! * joint.global_matrix();
+    return (decompose_matrix * (Vec4f){...joint.translation, 1.0}).xyz;
 }
