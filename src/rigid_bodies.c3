@@ -370,6 +370,5 @@ macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f
 
 
 fn Vec3f decompose_joint(Node body, Node joint) {
-    Matrix4f decompose_matrix = body.global_matrix().inverse()!! * joint.global_matrix();
-    return (decompose_matrix * (Vec4f){...joint.translation, 1.0}).xyz;
+    return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4f){0, 0, 0, 1}).xyz;
 }
