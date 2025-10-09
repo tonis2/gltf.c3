@@ -57,7 +57,6 @@ enum LimitType : const uint  {
 }
 
 struct Limit {
-    LimitType type;
     Vec3f axes;
     float min;
     float max;
@@ -77,7 +76,8 @@ struct Drive {
 }
 
 struct PhysicsJoint {
-    List{Limit} limits;
+    List{Limit} angular_limits;
+    List{Limit} linear_limits;
     List{Drive} drives;
 }
 
@@ -264,17 +264,18 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 
     if (try limits) {
         foreach (limit: limits.array) {
-            Limit joint_limit = { 
-                .axes = {0, 0, 0},
-                .min = (float)limit.get_float("min") ?? 0,
-                .max = (float)limit.get_float("max") ?? 0,
-            };
 
             Object*? linear_axes = limit.get("linearAxes");
             Object*? angular_axes = limit.get("angularAxes");
 
             if (try linear_axes) {
-                joint_limit.type = LINEAR;
+
+                Limit joint_limit = { 
+                    .axes = {0, 0, 0},
+                    .min = (float)limit.get_float("min") ?? 0,
+                    .max = (float)limit.get_float("max") ?? 0,
+                };
+                
                 foreach (axis: linear_axes.array) {
                     switch ((Axis)axis.f) {
                         case X: joint_limit.axes.x = 1;
@@ -282,10 +283,18 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
                         case Z: joint_limit.axes.z = 1;
                     }
                 }
+
+                self.linear_limits.push(joint_limit);
             }
 
             if (try angular_axes) {
-                joint_limit.type = ANGULAR;
+
+                Limit joint_limit = { 
+                    .axes = {0, 0, 0},
+                    .min = (float)limit.get_float("min") ?? 0,
+                    .max = (float)limit.get_float("max") ?? 0,
+                };
+
                 foreach (axis: angular_axes.array) {
                    switch ((Axis)axis.f) {
                         case X: joint_limit.axes.x = 1;
@@ -293,9 +302,9 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
                         case Z: joint_limit.axes.z = 1;
                     }
                 }
-            }
 
-            self.limits.push(joint_limit);
+                self.angular_limits.push(joint_limit);
+            }
         }
     }
 
@@ -319,7 +328,8 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 }
 
 fn void PhysicsJoint.free(&self) {
-    self.limits.free();
+    self.linear_limits.free();
+    self.angular_limits.free();
     self.drives.free();
 }
 
