@@ -1380,11 +1380,11 @@ fn uint Accessor.componentLen(Accessor* self) {
     }
 }
 
-fn uint Accessor.stride(Accessor* self) {
+fn uint Accessor.stride(Accessor self) {
     return self.dataSize() * self.componentLen();
 }
 
-fn uint Accessor.dataSize(Accessor* self) {
+fn uint Accessor.dataSize(Accessor self) {
     switch (self.data_type) {
         case DataType.ICHAR:
             return ichar.sizeof;

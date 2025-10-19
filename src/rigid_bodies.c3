@@ -270,7 +270,7 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 
             if (try linear_axes) {
 
-                Limit joint_limit = { 
+                Limit joint_limit = {
                     .axes = {0, 0, 0},
                     .min = (float)limit.get_float("min") ?? 0,
                     .max = (float)limit.get_float("max") ?? 0,
