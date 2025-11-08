@@ -194,6 +194,7 @@ struct Primitive {
 struct Mesh {
     String name;
     usz scene;
+    bool convex_hull;
     List{Primitive} primitives;
     List{float} weights;
 }
@@ -1161,6 +1162,15 @@ fn Gltf? parse(InStream stream) {
         }
     }
 
+    // Parse meshes
+    if (try meshes) {
+        foreach (mesh : meshes.array) {
+            Mesh data;
+            data.from_json(mesh);
+            content.meshes.push(data);
+        }
+    }
+
     // // Parse nodes
     if (try nodes) {
         foreach (uint i, node : nodes.array) {
@@ -1168,6 +1178,10 @@ fn Gltf? parse(InStream stream) {
            data.from_json(node, &content);
            content.nodes.push(data);
 
+           if (data.name == "physicsMeshDataNode") {
+                content.meshes[data.mesh].convex_hull = true;
+           }
+           
            if (data.has_light()) {
                 Light* light = &content.lights[data.light];
                 light.position = data.translation;
@@ -1226,16 +1240,6 @@ fn Gltf? parse(InStream stream) {
             content.materials.push(material);
         }
     }
-
-    // // Parse meshes
-    if (try meshes) {
-        foreach (mesh : meshes.array) {
-            Mesh data;
-            data.from_json(mesh);
-            content.meshes.push(data);
-        }
-    }
-
     // // Parse buffers
     if (try buffers) {
         foreach (buffer : buffers.array) {
