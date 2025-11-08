@@ -114,24 +114,21 @@ fn List{uint} Gltf.find_skin_animations(Gltf self, uint skin_index) {
 macro bool Animation.equals(self, Animation b) @operator(==) => self.name == b.name;
 
 
-macro Gltf.@cast_buffer(&self, Accessor accessor, usz index, #type) {
+macro Gltf.@cast_buffer(&self, #target, usz index, #type) {
+    Accessor accessor;
+    $if $typeof(#target).nameof == "Accessor": {
+        accessor = #target;
+    }
+    $else {
+        accessor = self.accessors[#target]!;
+    }       
+    $endif
+    
     BufferView bufferView = self.bufferViews[accessor.view];
     Buffer buffer = self.buffers[bufferView.buffer];
     usz index_offset = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
     usz start_offset = accessor.offset + bufferView.offset;
     return bitcast(*(char[#type.sizeof]*)buffer.data[(start_offset + (index * index_offset))..], #type);
-}
-
-
-macro Gltf.@cast_with_default(&self, #accessor_index, usz index, #value) {
-    if (catch err = #accessor_index) return #value;
-
-    Accessor accessor = self.accessors[#accessor_index!!];
-    BufferView bufferView = self.bufferViews[accessor.view];
-    Buffer buffer = self.buffers[bufferView.buffer];
-    usz index_offset = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
-    usz start_offset = accessor.offset + bufferView.offset;
-    return bitcast(*(char[$typeof(#value).sizeof]*)buffer.data[(start_offset + (index * index_offset))..], $typeof(#value));
 }
 
 fn void* Gltf.get_data_array(&self, ulong accessor_index) {

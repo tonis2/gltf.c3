@@ -313,7 +313,7 @@ struct Image {
     ResourceType type;
 }
 
-struct Light {
+struct Light @align(64) {
     Vec3f position;
     Vec3f color;
     LightType type;
@@ -327,7 +327,6 @@ struct AnimationValue {
     float time;
     Vec4f value;
 }
-
 
 // Parsing JSON to structs
 fn void Scene.from_json(&self, Object* json) {
