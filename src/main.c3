@@ -421,7 +421,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
     }
 
     if (try scale) {
-        self.scale = {(float)scale.get_at(0).f, (float)scale.get_at(1).f, (float)scale.get_at(2).f};
+        self.scale = {math::abs((float)scale.get_at(0).f), math::abs((float)scale.get_at(1).f), math::abs((float)scale.get_at(2).f)};
     }
 
     if (try translation) {
