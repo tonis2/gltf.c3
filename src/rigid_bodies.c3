@@ -115,15 +115,22 @@ struct Collider {
     int node;
     int material;
     int collision_filter;
+    int mesh;
 }
 
-fn bool Collider.has_shape(self) => self.shape > -1;
-fn bool Collider.has_node(self) => self.node > -1;
-fn bool Collider.has_material(self) => self.material > -1;
-fn bool Collider.has_filter(self) => self.collision_filter > -1;
+fn bool Collider.has_mesh(self) => self.mesh != -1;
+fn bool Collider.has_shape(self) => self.shape != -1;
+fn bool Collider.has_node(self) => self.node != -1;
+fn bool Collider.has_material(self) => self.material != -1;
+fn bool Collider.has_filter(self) => self.collision_filter != -1;
 
 fn Collider Collider.from_json(self, Object* json) {
     Object*? geometry = json.get("geometry");
+
+    self.shape = -1;
+    self.node = -1;
+    self.convex_hull = false;
+    self.mesh = -1;
 
     if (try geometry) {
         self.convex_hull = geometry.get_bool("convexHull") ?? false;

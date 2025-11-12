@@ -343,9 +343,9 @@ fn void Scene.free(self) {
 }
 
 fn void Node.from_json(&self, Object* json, Gltf* content) {
-    self.mesh = -1;
-    self.camera = -1;
-    self.skin = -1;
+    self.mesh = json.get_int("mesh") ?? -1;
+    self.camera = json.get_int("camera") ?? -1;
+    self.skin = json.get_int("skin") ?? -1;
     self.light = -1;
     self.joint = -1;
     self.motion = -1;
@@ -372,10 +372,6 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
         };
     }
 
-    int? mesh = json.get_int("mesh");
-    int? camera = json.get_int("camera");
-    int? skin = json.get_int("skin");
-
     @when_extended(json, PUNCTUAL_LIGHT_EXTENSION; Object* extension) {
         self.light = extension.get_int("light")!!;
     };
@@ -397,7 +393,13 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
 
         if (try collider) {
             self.collider = (int)content.colliders.len();
-            content.colliders.push((Collider){}.from_json(collider));
+            Collider collider_data = (Collider){}.from_json(collider);
+            
+            if (collider_data.convex_hull) {
+                collider_data.mesh = self.mesh;
+            }
+            
+            content.colliders.push(collider_data);
         }
 
         if (try motion) {
@@ -413,9 +415,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
     };
 
     if (try name) self.name = name.copy(mem);
-    if (try skin) self.skin = skin;
-    if (try mesh) self.mesh = mesh;
-    if (try camera) self.camera = camera;
+
     if (try rotation) {
         self.rotation = {(float)rotation.get_at(0).f, (float)rotation.get_at(1).f, (float)rotation.get_at(2).f, (float)rotation.get_at(3).f};
     }
