@@ -277,10 +277,13 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 
             if (try linear_axes) {
 
+                float min = (float)limit.get_float("min") ?? 0;
+                float max = (float)limit.get_float("max") ?? 0;
+
                 Limit joint_limit = {
                     .axes = {0, 0, 0},
-                    .min = (float)limit.get_float("min") ?? 0,
-                    .max = (float)limit.get_float("max") ?? 0,
+                    .min =  min == 0 ? -float.max : min,
+                    .max = max == 0 ? float.max : max,
                 };
                 
                 foreach (axis: linear_axes.array) {
@@ -295,7 +298,6 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
             }
 
             if (try angular_axes) {
-
                 Limit joint_limit = { 
                     .axes = {0, 0, 0},
                     .min = (float)limit.get_float("min") ?? 0,
