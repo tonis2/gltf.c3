@@ -271,48 +271,46 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
 
     if (try limits) {
         foreach (limit: limits.array) {
-
             Object*? linear_axes = limit.get("linearAxes");
             Object*? angular_axes = limit.get("angularAxes");
 
+            float min = (float)limit.get_float("min") ?? 0;
+            float max = (float)limit.get_float("max") ?? 0;
+
             if (try linear_axes) {
-
-                float min = (float)limit.get_float("min") ?? 0;
-                float max = (float)limit.get_float("max") ?? 0;
-
-                Limit joint_limit = {
-                    .axes = {0, 0, 0},
-                    .min =  min == 0 ? -float.max : min,
-                    .max = max == 0 ? float.max : max,
-                };
-                
                 foreach (axis: linear_axes.array) {
-                    switch ((Axis)axis.f) {
-                        case X: joint_limit.axes.x = 1;
-                        case Y: joint_limit.axes.y = 1;
-                        case Z: joint_limit.axes.z = 1;
-                    }
-                }
+                    Limit joint_limit = {
+                        .axes = {0, 0, 0},
+                        .min =  min == 0 ? -float.max : min,
+                        .max = max == 0 ? float.max : max,
+                    };
 
-                self.linear_limits.push(joint_limit);
+                    switch (axis.f) {
+                        case 0: joint_limit.axes.x = 1;
+                        case 1: joint_limit.axes.y = 1;
+                        case 2: joint_limit.axes.z = 1;
+                    }
+
+                    self.linear_limits.push(joint_limit);
+                }
             }
 
             if (try angular_axes) {
-                Limit joint_limit = { 
-                    .axes = {0, 0, 0},
-                    .min = (float)limit.get_float("min") ?? 0,
-                    .max = (float)limit.get_float("max") ?? 0,
-                };
-
                 foreach (axis: angular_axes.array) {
-                   switch ((Axis)axis.f) {
-                        case X: joint_limit.axes.x = 1;
-                        case Y: joint_limit.axes.y = 1;
-                        case Z: joint_limit.axes.z = 1;
-                    }
-                }
+                    Limit joint_limit = {
+                        .axes = {0, 0, 0},
+                        .min =  min == 0 ? -float.max : min,
+                        .max = max == 0 ? float.max : max,
+                    };
 
-                self.angular_limits.push(joint_limit);
+                    switch (axis.f) {
+                        case 0: joint_limit.axes.x = 1;
+                        case 1: joint_limit.axes.y = 1;
+                        case 2: joint_limit.axes.z = 1;
+                    }
+
+                    self.angular_limits.push(joint_limit);
+                }
             }
         }
     }
