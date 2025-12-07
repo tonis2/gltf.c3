@@ -277,12 +277,17 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
             float min = (float)limit.get_float("min") ?? 0;
             float max = (float)limit.get_float("max") ?? 0;
 
+            float stiffness = (float)limit.get_float("stiffness") ?? 1;
+            float damping = (float)limit.get_float("damping") ?? 1;
+
             if (try linear_axes) {
                 foreach (axis: linear_axes.array) {
                     Limit joint_limit = {
                         .axes = {0, 0, 0},
-                        .min =  min == 0 ? -float.max : min,
-                        .max = max == 0 ? float.max : max,
+                        .min = min,
+                        .max = max,
+                        .stiffness = stiffness,
+                        .damping = damping
                     };
 
                     switch (axis.f) {
@@ -299,8 +304,10 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
                 foreach (axis: angular_axes.array) {
                     Limit joint_limit = {
                         .axes = {0, 0, 0},
-                        .min =  min == 0 ? -float.max : min,
-                        .max = max == 0 ? float.max : max,
+                        .min = min,
+                        .max = max,
+                        .stiffness = stiffness,
+                        .damping = damping
                     };
 
                     switch (axis.f) {
@@ -387,5 +394,5 @@ macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f
 
 
 fn Vec3f decompose_joint(Node body, Node joint) {
-    return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4f){0, 0, 0, 1}).xyz;
+    return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4f){0, 0, 0, 1}).xyz * body.scale;
 }
