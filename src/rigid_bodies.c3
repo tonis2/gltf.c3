@@ -44,18 +44,6 @@ struct Shape {
     ShapeType type;
 }
 
-enum Axis : const int {
-   X,
-   Y,
-   Z,
-   EMPTY = -1,
-}
-
-enum LimitType : const uint  {
-    LINEAR,
-    ANGULAR
-}
-
 struct Limit {
     Vec3f axes;
     float min;

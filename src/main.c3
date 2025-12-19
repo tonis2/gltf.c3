@@ -395,10 +395,11 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
             self.collider = (int)content.colliders.len();
             Collider collider_data = (Collider){}.from_json(collider);
             
-            if (collider_data.convex_hull) {
+            if (collider_data.has_shape() == false) {
                 collider_data.mesh = self.mesh;
+                assert(self.mesh != -1, "Collider must have a shape or mesh info, both cant be missing");
             }
-            
+
             content.colliders.push(collider_data);
         }
 
@@ -1180,7 +1181,7 @@ fn Gltf? parse(InStream stream) {
            content.nodes.push(data);
 
            if (data.name == "physicsMeshDataNode") {
-                content.meshes[data.mesh].convex_hull = true;
+               content.meshes[data.mesh].convex_hull = true;
            }
            
            if (data.has_light()) {
