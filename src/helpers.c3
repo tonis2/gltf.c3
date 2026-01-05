@@ -158,7 +158,7 @@ fn char* Gltf.get_data(&self, BufferView view) {
 
 // fn int Vec3f.hash(&self) => ((int)self.x * 73856093) ^ ((int)self.y * 19349663) ^ ((int)self.z * 83492791);
 
-macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position)) {
+macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position, index)) {
     List{Vec3f} positions;
     List{ushort} indices;
 
@@ -188,10 +188,10 @@ macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position
                     usz index = indices[i + j];
                     value[j] = positions[index];
                 };
-                @callback(value);
+                @callback(value, indices);
             };
         $else
-            foreach (index: indices) @callback(positions[index]);
+            foreach (index: indices) @callback(positions[index], index);
         $endif
     }
 }
