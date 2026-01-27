@@ -191,7 +191,7 @@ macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position
                 @callback(value, indices);
             };
         $else
-            foreach (index: indices) @callback(positions[index], index);
+            foreach (i, index: indices) @callback(positions[index], i);
         $endif
     }
 }
