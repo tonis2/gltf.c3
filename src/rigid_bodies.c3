@@ -6,29 +6,29 @@ import std::math;
 import std::collections::list;
 import std::encoding::json;
 
-enum ShapeType {
+enum ShapeType: inline uint {
     BOX,
     CAPSULE,
     CYLINDER,
     SPHERE,
 }
 
-enum MagFilter {
+enum MagFilter: inline uint {
     NEAREST,
     LINEAR,
 }
 
-enum DriveType {
+enum DriveType: inline uint {
     ANGULAR,
     LINEAR
 }
 
-enum DriveMode {
+enum DriveMode: inline uint {
     FORCE,
     ACCELERATION
 }
 
-enum PhysicsCombine {
+enum PhysicsCombine: inline uint {
     AVERAGE,
     MINIMUM,
     MAXIMUM,
@@ -340,26 +340,24 @@ fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json) {
     self.dynamic_friction = (float)json.get_float("dynamicFriction") ?? 0;
     self.restitution = (float)json.get_float("restitution") ?? 0;
     
-    String? friction_combine = json.get_string("frictionCombine");
-    String? restitution_combine = json.get_string("restitutionCombine");
+    String friction_combine = json.get_string("frictionCombine") ?? "multiply";
+    String restitution_combine = json.get_string("restitutionCombine") ?? "multiply";
 
-    if (try friction_combine) {
-        switch (friction_combine) {
-            case "average": self.friction_combine = AVERAGE;
-            case "minimum": self.friction_combine = MINIMUM;
-            case "maximum": self.friction_combine = MAXIMUM;
-            case "multiply": self.friction_combine = MULTIPLY;
-        }
-    }
+	switch (friction_combine) {
+		case "average": self.friction_combine = AVERAGE;
+		case "minimum": self.friction_combine = MINIMUM;
+		case "maximum": self.friction_combine = MAXIMUM;
+		case "multiply": self.friction_combine = MULTIPLY;
+		default: self.friction_combine = MULTIPLY;
+	}
 
-    if (try restitution_combine) {
-        switch (restitution_combine) {
-            case "average": self.restitution_combine = AVERAGE;
-            case "minimum": self.restitution_combine = MINIMUM;
-            case "maximum": self.restitution_combine = MAXIMUM;
-            case "multiply": self.restitution_combine = MULTIPLY;
-        }
-    }
+	switch (restitution_combine) {
+		case "average": self.restitution_combine = AVERAGE;
+		case "minimum": self.restitution_combine = MINIMUM;
+		case "maximum": self.restitution_combine = MAXIMUM;
+		case "multiply": self.restitution_combine = MULTIPLY;
+		default: self.friction_combine = MULTIPLY;
+	}
 
     return self;
 }
