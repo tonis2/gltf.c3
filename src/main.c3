@@ -1016,7 +1016,7 @@ fn Gltf? loadFile(String path) {
 
     if (catch err = file) {
         io::printfn("Failed to find the gltf file");
-        return FILE_NOT_FOUND?;
+        return FILE_NOT_FOUND~;
     }
 
     return parse(&file);
@@ -1030,7 +1030,7 @@ fn Gltf? parse(InStream stream) {
 
     if (catch err = stream.read(&gltf_header)) {
       io::printfn("GLTF parsing error %s", err);
-      return JSON_PARSE_FAILED?;
+      return JSON_PARSE_FAILED~;
     }
 
     // if magic bytes == glTF, it means its in glb format
@@ -1044,22 +1044,22 @@ fn Gltf? parse(InStream stream) {
         uint gltf_size = bitcast(*(char[4]*)gltf_header[8..11], uint);
 
         if (version != 2) {
-            return UNSUPPORTED_GLTF_VERSION?;
+            return UNSUPPORTED_GLTF_VERSION~;
         }
 
         if (catch err = stream.read(&json_header)) {
-          return JSON_PARSE_FAILED?;
+          return JSON_PARSE_FAILED~;
         }
 
         uint json_chunk_length = bitcast(*(char[4]*)json_header[0..3], uint);
         char[4] json_chunk_type = json_header[4..7];
 
         if (catch err = stream.read(&json_header)) {
-          return JSON_PARSE_FAILED?;
+          return JSON_PARSE_FAILED~;
         }
 
         if (json_chunk_type[0..] != "JSON") {
-            return UNSUPPORTED_GLTF_VERSION?;
+            return UNSUPPORTED_GLTF_VERSION~;
         }
 
         stream.seek(20, Seek.SET)!;
@@ -1067,14 +1067,14 @@ fn Gltf? parse(InStream stream) {
         stream.seek((usz)20 + json_chunk_length, Seek.SET)!;
 
         if (catch err = stream.read(&binary_header)) {
-          return JSON_PARSE_FAILED?;
+          return JSON_PARSE_FAILED~;
         }
 
         uint binary_chunk_length = bitcast(*(char[4]*)binary_header[0..3], uint);
         char[4] binary_chunk_type = binary_header[4..7];
 
         if (binary_chunk_type[0..] != "BIN\0") {
-            return UNSUPPORTED_GLTF_VERSION?;
+            return UNSUPPORTED_GLTF_VERSION~;
         }
 
         // Create binary buffer data
@@ -1082,7 +1082,7 @@ fn Gltf? parse(InStream stream) {
         binary_buffer = mem::new_array(char, binary_chunk_length);
 
         if (catch err = stream.read(binary_buffer)) {
-            return JSON_PARSE_FAILED?;
+            return JSON_PARSE_FAILED~;
         }
     } else {
       stream.seek(0, Seek.SET)!;
@@ -1091,7 +1091,7 @@ fn Gltf? parse(InStream stream) {
 
     if (catch err = gltfJson) {
         io::printfn("%s", err);
-        return JSON_PARSE_FAILED?;
+        return JSON_PARSE_FAILED~;
     }
 
     defer gltfJson.free();
@@ -1351,7 +1351,7 @@ fn Node? Gltf.find_node(Gltf* self, String name) {
             return data;
         }
     }
-    return KEY_NOT_FOUND?;
+    return KEY_NOT_FOUND~;
 }
 
 
@@ -1361,7 +1361,7 @@ fn Mesh? Gltf.find_mesh(Gltf* self, String name) {
             return data;
         }
     }
-    return KEY_NOT_FOUND?;
+    return KEY_NOT_FOUND~;
 }
 
 macro bool Node.equals(self, Node b) @operator(==) => self.name == b.name;
@@ -1445,7 +1445,7 @@ fn char[]? parse_base64(char[] data, usz size) @private {
 
     if (catch err = buffer_data) {
         io::printfn("Buffer parsing error: '%s'.", err);
-        return BROKEN_BUFFER?;
+        return BROKEN_BUFFER~;
     };
     return buffer_data;
 }

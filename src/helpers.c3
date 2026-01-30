@@ -69,7 +69,7 @@ fn Skin? Gltf.find_skin(Gltf* self, String name) {
             return data;
         }
     }
-    return KEY_NOT_FOUND?;
+    return KEY_NOT_FOUND~;
 }
 
 fn Animation? Gltf.find_animation(Gltf* self, String name) {
@@ -78,14 +78,14 @@ fn Animation? Gltf.find_animation(Gltf* self, String name) {
             return data;
         }
     }
-    return KEY_NOT_FOUND?;
+    return KEY_NOT_FOUND~;
 }
 
 fn uint? Gltf.find_animation_index(Gltf* self, String name) {
     foreach (uint index, data : self.animations) {
         if (data.name == name) return index;
     }
-    return KEY_NOT_FOUND?;
+    return KEY_NOT_FOUND~;
 }
 
 fn List{uint} Gltf.find_skin_animations(Gltf self, uint skin_index) {
