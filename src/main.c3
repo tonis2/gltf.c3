@@ -394,6 +394,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
         if (try collider) {
             self.collider = (int)content.colliders.len();
             Collider collider_data = (Collider){}.from_json(collider);
+			collider_data.base_node = self.index;
             
             if (collider_data.has_shape() == false) {
                 collider_data.mesh = self.mesh;

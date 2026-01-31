@@ -104,6 +104,7 @@ struct Collider {
     int material;
     int collision_filter;
     int mesh;
+	int base_node;
 }
 
 fn bool Collider.has_mesh(self) => self.mesh != -1;
@@ -119,6 +120,7 @@ fn Collider Collider.from_json(self, Object* json) {
     self.node = -1;
     self.convex_hull = false;
     self.mesh = -1;
+	self.base_node = -1;
 
     if (try geometry) {
         self.convex_hull = geometry.get_bool("convexHull") ?? false;
