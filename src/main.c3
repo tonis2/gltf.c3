@@ -315,8 +315,9 @@ struct Image {
 }
 
 struct Light @align(64) {
-    Vec3f position;
-    Vec3f color;
+    // Use individual floats to ensure packed layout (no SIMD alignment)
+    float[3] position;
+    float[3] color;
     LightType type;
     float intensity;
     float range;
@@ -991,10 +992,13 @@ fn void Light.from_json(&self, Object* json) {
     Object*? color = json.get("color");
     Object*? spot = json.get("spot");
 
-    self.color = {1.0, 1.0, 1.0};
+	self.color = {1, 1, 1};
 
     // if (try name) self.name = name.copy(mem);
-    if (try color) self.color = {(float)color.get_at(0).f, (float)color.get_at(1).f, (float)color.get_at(2).f};
+    if (try color) {
+		self.color = {(float)color.get_at(0).f, (float)color.get_at(1).f, (float)color.get_at(2).f};
+    }
+
     if (try intensity) self.intensity = intensity;
     if (try range) self.range = range;
     if (try type) {
@@ -1151,6 +1155,11 @@ fn Gltf? parse(InStream stream) {
             foreach (light: lights.array) {
                 Light data;
                 data.from_json(light);
+
+				if (data.range == 0 && data.type == POINT) {
+					data.range = 50.0;
+				}
+
                 content.lights.push(data);
             }
         }
@@ -1187,8 +1196,7 @@ fn Gltf? parse(InStream stream) {
            
            if (data.has_light()) {
                 Light* light = &content.lights[data.light];
-                light.position = data.translation;
-                // light.position = data.translation.transform(data.rotation.to_matrixf());
+                light.position = {...data.translation};
            }
         }
     }
