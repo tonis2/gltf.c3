@@ -735,7 +735,7 @@ fn void? Material.from_json(&self, Object* json, Gltf data) {
     self.doubleSided = json.get_bool("doubleSided") ?? false;
 
     self.baseColorFactor = {1.0, 1.0, 1.0, 1.0};
-    self.emissiveFactor = {1.0, 1.0, 1.0, 1.0};
+    self.emissiveFactor = {0.0, 0.0, 0.0, 1.0};
 
     self.roughnessFactor = 0;
     self.metallicFactor = 0;
