@@ -150,6 +150,7 @@ struct Gltf {
     List{PhysicsMaterial} physics_materials;
     List{CollisionFilter} collision_filters;
     List{Collider} colliders;
+    List{Trigger} triggers;
     List{Motion} motions;
 }
 
@@ -165,6 +166,7 @@ struct Node {
     int light;
 
     int collider;
+    int trigger;
     int motion;
 
     int joint;
@@ -351,6 +353,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
     self.joint = -1;
     self.motion = -1;
     self.collider = -1;
+    self.trigger = -1;
     self.index = (uint)content.nodes.len();
     
     self.rotation = {0,0,0,1};
@@ -396,13 +399,25 @@ fn void Node.from_json(&self, Object* json, Gltf* content) {
             self.collider = (int)content.colliders.len();
             Collider collider_data = (Collider){}.from_json(collider);
 			collider_data.base_node = self.index;
-            
+
             if (collider_data.has_shape() == false) {
                 collider_data.mesh = self.mesh;
                 assert(self.mesh != -1, "Collider must have a shape or mesh info, both cant be missing");
             }
 
             content.colliders.push(collider_data);
+        }
+
+        if (try trigger) {
+            self.trigger = (int)content.triggers.len();
+            Trigger trigger_data = (Trigger){}.from_json(trigger);
+            trigger_data.base_node = self.index;
+
+            if (trigger_data.has_shape() == false) {
+                trigger_data.mesh = self.mesh;
+            }
+
+            content.triggers.push(trigger_data);
         }
 
         if (try motion) {
@@ -450,6 +465,7 @@ fn bool Node.has_camera(self) => self.camera != -1;
 fn bool Node.has_light(self) => self.light != -1;
 fn bool Node.has_motion(self) => self.motion != -1;
 fn bool Node.has_collider(self) => self.collider != -1;
+fn bool Node.has_trigger(self) => self.trigger != -1;
 fn bool Node.has_joint(self) => self.joint != -1;
 
 fn void Node.free(&self) {
@@ -1331,7 +1347,9 @@ fn void Gltf.free(Gltf* self) {
     foreach (filter: self.collision_filters) filter.free();
     foreach (image: self.images) image.free();
 
-    self.colliders.free();    
+    self.colliders.free();
+    foreach (trigger: self.triggers) trigger.free();
+    self.triggers.free();
     self.motions.free();
     self.collision_filters.free();
     self.physics_materials.free();
