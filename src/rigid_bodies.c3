@@ -388,7 +388,7 @@ fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json) {
     self.restitution = (float)json.get_float("restitution") ?? 0;
     
     String friction_combine = json.get_string("frictionCombine") ?? "multiply";
-    String restitution_combine = json.get_string("restitutionCombine") ?? "multiply";
+    String restitution_combine = json.get_string("restitutionCombine") ?? "maximum";
 
 	switch (friction_combine) {
 		case "average": self.friction_combine = AVERAGE;
@@ -403,7 +403,7 @@ fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json) {
 		case "minimum": self.restitution_combine = MINIMUM;
 		case "maximum": self.restitution_combine = MAXIMUM;
 		case "multiply": self.restitution_combine = MULTIPLY;
-		default: self.friction_combine = MULTIPLY;
+		default: self.restitution_combine = MAXIMUM;
 	}
 
     return self;
