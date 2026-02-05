@@ -184,7 +184,7 @@ fn Motion Motion.from_json(self, Object* json) {
     Object*? inertia_diagonal = json.get("inertiaDiagonal");
     Object*? inertia_orientation = json.get("inertiaOrientation");
     Object*? linear_velocity = json.get("linearVelocity");
-    Object*? angular_velocity = json.get("linearVelocity");
+    Object*? angular_velocity = json.get("angularVelocity");
 
     if (try center_mass) {
         foreach (usz i, mass: center_mass.array) {
@@ -312,8 +312,8 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
             float min = (float)limit.get_float("min") ?? 0;
             float max = (float)limit.get_float("max") ?? 0;
 
-            float stiffness = (float)limit.get_float("stiffness") ?? 1;
-            float damping = (float)limit.get_float("damping") ?? 1;
+            float stiffness = (float)limit.get_float("stiffness") ?? 0;
+            float damping = (float)limit.get_float("damping") ?? 0;
 
             if (try linear_axes) {
                 foreach (axis: linear_axes.array) {
