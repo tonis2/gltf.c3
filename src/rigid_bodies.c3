@@ -218,6 +218,8 @@ fn Motion Motion.from_json(self, Object* json) {
 
     self.mass = (float)json.get_float("mass") ?? 0;
     self.gravity_factor = (float)json.get_float("gravityFactor") ?? 1;
+    self.linear_dampening = (float)json.get_float("linearDamping") ?? 0.9;
+    self.angular_dampening = (float)json.get_float("angularDamping") ?? 0.9;
     return self;
 }
 
