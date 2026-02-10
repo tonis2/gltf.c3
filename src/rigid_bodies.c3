@@ -99,12 +99,14 @@ struct Motion {
 
 struct Collider {
     bool convex_hull;
+    bool is_trigger;
     int shape;
     int node;
     int material;
     int collision_filter;
     int mesh;
 	int base_node;
+    List{uint} nodes;  // For compound triggers
 }
 
 fn bool Collider.has_mesh(self) => self.mesh != -1;
@@ -113,29 +115,16 @@ fn bool Collider.has_node(self) => self.node != -1;
 fn bool Collider.has_material(self) => self.material != -1;
 fn bool Collider.has_filter(self) => self.collision_filter != -1;
 
-struct Trigger {
-    bool convex_hull;
-    int shape;
-    int node;
-    int collision_filter;
-    int mesh;
-    int base_node;
-    List{uint} nodes;  // For compound triggers
-}
-
-fn bool Trigger.has_mesh(self) => self.mesh != -1;
-fn bool Trigger.has_shape(self) => self.shape != -1;
-fn bool Trigger.has_node(self) => self.node != -1;
-fn bool Trigger.has_filter(self) => self.collision_filter != -1;
-
-fn Collider Collider.from_json(self, Object* json) {
+fn Collider Collider.from_json(self, Object* json, bool is_trigger = false) {
     Object*? geometry = json.get("geometry");
+    Object*? nodes = json.get("nodes");
 
     self.shape = -1;
     self.node = -1;
     self.convex_hull = false;
     self.mesh = -1;
 	self.base_node = -1;
+    self.is_trigger = is_trigger;
 
     if (try geometry) {
         self.convex_hull = geometry.get_bool("convexHull") ?? false;
@@ -146,27 +135,6 @@ fn Collider Collider.from_json(self, Object* json) {
     self.material = json.get_int("physicsMaterial") ?? -1;
     self.collision_filter = json.get_int("collisionFilter") ?? -1;
 
-    return self;
-}
-
-fn Trigger Trigger.from_json(self, Object* json) {
-    Object*? geometry = json.get("geometry");
-    Object*? nodes = json.get("nodes");
-
-    self.shape = -1;
-    self.node = -1;
-    self.convex_hull = false;
-    self.mesh = -1;
-    self.base_node = -1;
-
-    if (try geometry) {
-        self.convex_hull = geometry.get_bool("convexHull") ?? false;
-        self.shape = geometry.get_int("shape") ?? -1;
-        self.node = geometry.get_int("node") ?? -1;
-    }
-
-    self.collision_filter = json.get_int("collisionFilter") ?? -1;
-
     // Parse compound trigger nodes
     if (try nodes) {
         foreach (node: nodes.array) self.nodes.push((uint)node.f);
@@ -175,7 +143,7 @@ fn Trigger Trigger.from_json(self, Object* json) {
     return self;
 }
 
-fn void Trigger.free(&self) {
+fn void Collider.free(&self) {
     self.nodes.free();
 }
 
