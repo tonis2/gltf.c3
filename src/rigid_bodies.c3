@@ -6,107 +6,120 @@ import std::math;
 import std::collections::list;
 import std::encoding::json;
 
-enum ShapeType: inline uint {
-    BOX,
-    CAPSULE,
-    CYLINDER,
-    SPHERE,
+enum ShapeType : inline uint
+{
+	BOX,
+	CAPSULE,
+	CYLINDER,
+	SPHERE,
 }
 
-enum MagFilter: inline uint {
-    NEAREST,
-    LINEAR,
+enum MagFilter : inline uint
+{
+	NEAREST,
+	LINEAR,
 }
 
-enum DriveType: inline uint {
-    ANGULAR,
-    LINEAR
+enum DriveType : inline uint
+{
+	ANGULAR,
+	LINEAR
 }
 
-enum DriveMode: inline uint {
-    FORCE,
-    ACCELERATION
+enum DriveMode : inline uint
+{
+	FORCE,
+	ACCELERATION
 }
 
-enum PhysicsCombine: inline uint {
-    AVERAGE,
-    MINIMUM,
-    MAXIMUM,
-    MULTIPLY
+enum PhysicsCombine : inline uint
+{
+	AVERAGE,
+	MINIMUM,
+	MAXIMUM,
+	MULTIPLY
 }
 
-struct Shape {
-    Vec3f size;
-    float height;
-    float radius_bottom;
-    float radius_top;
-    float radius;
-    ShapeType type;
+struct Shape
+{
+	Vec3f size;
+	float height;
+	float radius_bottom;
+	float radius_top;
+	float radius;
+	ShapeType type;
 }
 
-struct Limit {
-    Vec3f axes;
-    float min;
-    float max;
-    float stiffness;
-    float damping;
+struct Limit
+{
+	Vec3f axes;
+	float min;
+	float max;
+	float stiffness;
+	float damping;
 }
 
-struct Drive {
-    DriveType type;
-    DriveMode drive;
-    uint axis;
-    float max_force;
-    float position_target;
-    float velocity_target;
-    float stiffness;
-    float damping;
+struct Drive
+{
+	DriveType type;
+	DriveMode drive;
+	uint axis;
+	float max_force;
+	float position_target;
+	float velocity_target;
+	float stiffness;
+	float damping;
 }
 
-struct PhysicsJoint {
-    List{Limit} angular_limits;
-    List{Limit} linear_limits;
-    List{Drive} drives;
+struct PhysicsJoint
+{
+	List {Limit} angular_limits;
+	List {Limit} linear_limits;
+	List {Drive} drives;
 }
 
-struct PhysicsMaterial {
-    float static_friction;
-    float dynamic_friction;
-    float restitution;
-    PhysicsCombine friction_combine;
-    PhysicsCombine restitution_combine;
+struct PhysicsMaterial
+{
+	float static_friction;
+	float dynamic_friction;
+	float restitution;
+	PhysicsCombine friction_combine;
+	PhysicsCombine restitution_combine;
 }
 
-struct CollisionFilter {
-   List{String} systems;
-   List{String} not_colliding;
-   List{String} colliding_with;
+struct CollisionFilter
+{
+	List {String} systems;
+	List {String} not_colliding;
+	List {String} colliding_with;
 }
 
-struct Motion {
-    bool is_kinematic;
-    float mass;
-    float gravity_factor;
-    float linear_dampening;
-    float angular_dampening;
-    
-    Vec3f mass_center;
-    Vec3f inertia_diagonal;
-    Quaternionf inertia_orientation;
-    Vec3f linear_velocity;
-    Vec3f angular_velocity;
+struct Motion
+{
+	bool is_kinematic;
+	float mass;
+	float gravity_factor;
+	float linear_dampening;
+	float angular_dampening;
+
+	Vec3f mass_center;
+	Vec3f inertia_diagonal;
+	Quaternionf inertia_orientation;
+	Vec3f linear_velocity;
+	Vec3f angular_velocity;
 }
 
-struct Collider {
-    bool convex_hull;
-    bool is_trigger;
-    int shape;
-    int node;
-    int material;
-    int collision_filter;
-    int mesh;
+struct Collider
+{
+	bool convex_hull;
+	bool is_trigger;
+	int shape;
+	int node;
+	int material;
+	int collision_filter;
+	int mesh;
 	int base_node;
-    List{uint} nodes;  // For compound triggers
+	List {uint} nodes; // For compound triggers
 }
 
 fn bool Collider.has_mesh(self) => self.mesh != -1;
@@ -115,288 +128,354 @@ fn bool Collider.has_node(self) => self.node != -1;
 fn bool Collider.has_material(self) => self.material != -1;
 fn bool Collider.has_filter(self) => self.collision_filter != -1;
 
-fn Collider Collider.from_json(self, Object* json, bool is_trigger = false) {
-    Object*? geometry = json.get("geometry");
-    Object*? nodes = json.get("nodes");
+fn Collider Collider.from_json(self, Object* json, bool is_trigger = false)
+{
+	Object*? geometry = json.get("geometry");
+	Object*? nodes = json.get("nodes");
 
-    self.shape = -1;
-    self.node = -1;
-    self.convex_hull = false;
-    self.mesh = -1;
+	self.shape = -1;
+	self.node = -1;
+	self.convex_hull = false;
+	self.mesh = -1;
 	self.base_node = -1;
-    self.is_trigger = is_trigger;
+	self.is_trigger = is_trigger;
 
-    if (try geometry) {
-        self.convex_hull = geometry.get_bool("convexHull") ?? false;
-        self.shape = geometry.get_int("shape") ?? -1;
-        self.node = geometry.get_int("node") ?? -1;
-    }
-
-    self.material = json.get_int("physicsMaterial") ?? -1;
-    self.collision_filter = json.get_int("collisionFilter") ?? -1;
-
-    // Parse compound trigger nodes
-    if (try nodes) {
-        foreach (node: nodes.array) self.nodes.push((uint)node.f);
-    }
-
-    return self;
-}
-
-fn void Collider.free(&self) {
-    self.nodes.free();
-}
-
-fn Motion Motion.from_json(self, Object* json) {
-    Object*? center_mass = json.get("centerOfMass");
-    Object*? inertia_diagonal = json.get("inertiaDiagonal");
-    Object*? inertia_orientation = json.get("inertiaOrientation");
-    Object*? linear_velocity = json.get("linearVelocity");
-    Object*? angular_velocity = json.get("angularVelocity");
-
-    if (try center_mass) {
-        foreach (usz i, mass: center_mass.array) {
-            self.mass_center[i] = (float)mass.f;
-        }
-    }
-
-    if (try inertia_diagonal) {
-        foreach (usz i, inertia: inertia_diagonal.array) {
-            self.inertia_diagonal[i] = (float)inertia.f;
-        }
-    }
-
-    if (try inertia_orientation) {
-        foreach (usz i, inertia: inertia_orientation.array) {
-            self.inertia_orientation.v[i] = (float)inertia.f;
-        }
-    }
-
-    if (try linear_velocity) {
-        foreach (usz i, velocity: linear_velocity.array) {
-            self.linear_velocity[i] = (float)velocity.f;
-        }
-    }
-
-    if (try angular_velocity) {
-        foreach (usz i, velocity: angular_velocity.array) {
-            self.angular_velocity[i] = (float)velocity.f;
-        }
-    }
-
-    self.is_kinematic = json.get_bool("isKinematic") ?? false;
-    self.mass = (float)json.get_float("mass") ?? 0;
-    self.gravity_factor = (float)json.get_float("gravityFactor") ?? 1;
-    self.linear_dampening = (float)json.get_float("linearDamping") ?? 0.9;
-    self.angular_dampening = (float)json.get_float("angularDamping") ?? 0.9;
-    return self;
-}
-
-fn CollisionFilter CollisionFilter.from_json(self, Object* json) {
-    Object*? systems = json.get("collisionSystems");
-    Object*? collide_with = json.get("collideWithSystems");
-    Object*? not_colliding = json.get("notCollideWithSystems");
-
-    if (try systems) {
-        foreach (system: systems.array) self.systems.push(system.s);
-    }
-
-    if (try collide_with) {
-        foreach (system: collide_with.array) self.colliding_with.push(system.s);
-    }
-
-    if (try not_colliding) {
-        foreach (system: not_colliding.array) self.not_colliding.push(system.s);
-    }
-
-    return self;
-}
-
-fn void CollisionFilter.free(&self) {
-    self.systems.free();
-    self.not_colliding.free();
-    self.colliding_with.free();
-}
-
-fn Shape Shape.from_json(self, Object* json) {
-    String? type = json.get_string("type");
-
-    if (try type) {
-        switch (type) {
-            case "box": {
-                Object*? box = json.get("box");
-                Object*? size = box.get("size");
-                self = {
-                    .type = BOX,
-                    .size = @ok(size) ? { (float)size.get_at(0).f!!, (float)size.get_at(1).f!!, (float)size.get_at(2).f!!} : {0,0,0}
-                };
-            }
-            case "sphere": {
-                Object*? body = json.get("sphere");
-                float radius = (float)body.get_float("radius") ?? 0;
-                self = {
-                    .type = SPHERE,
-                    .radius = radius
-                };
-            }
-            case "cylinder": {
-                Object*? body = json.get("cylinder");
-                float height = (float)body.get_float("height") ?? 0;
-                float radius_bottom = (float)body.get_float("radiusBottom") ?? 0;
-                float radius_top = (float)body.get_float("radiusTop") ?? 0;
-
-                self = {
-                    .type = CYLINDER,
-                    .height = height,
-                    .radius_bottom  = radius_bottom,
-                    .radius_top = radius_top
-                };
-            }
-            case "capsule": {
-                Object*? body = json.get("capsule");
-                float height = (float)body.get_float("height") ?? 0;
-                float radius_bottom = (float)body.get_float("radiusBottom") ?? 0;
-                float radius_top = (float)body.get_float("radiusTop") ?? 0;
-
-                self = {
-                    .type = CAPSULE,
-                    .height = height,
-                    .radius_bottom  = radius_bottom,
-                    .radius_top = radius_top
-                };
-            }
-        }
-    }
-
-    return self;
-}
-
-fn PhysicsJoint PhysicsJoint.from_json(self, Object* json) {
-    Object*? limits = json.get("limits");
-    Object*? drives = json.get("drives");
-
-    if (try limits) {
-        foreach (limit: limits.array) {
-            Object*? linear_axes = limit.get("linearAxes");
-            Object*? angular_axes = limit.get("angularAxes");
-
-            float min = (float)limit.get_float("min") ?? 0;
-            float max = (float)limit.get_float("max") ?? 0;
-
-            float stiffness = (float)limit.get_float("stiffness") ?? 0;
-            float damping = (float)limit.get_float("damping") ?? 0;
-
-            if (try linear_axes) {
-                foreach (axis: linear_axes.array) {
-                    Limit joint_limit = {
-                        .axes = {0, 0, 0},
-                        .min = min,
-                        .max = max,
-                        .stiffness = stiffness,
-                        .damping = damping
-                    };
-
-                    switch (axis.f) {
-                        case 0: joint_limit.axes.x = 1;
-                        case 1: joint_limit.axes.y = 1;
-                        case 2: joint_limit.axes.z = 1;
-                    }
-
-                    self.linear_limits.push(joint_limit);
-                }
-            }
-
-            if (try angular_axes) {
-                foreach (axis: angular_axes.array) {
-                    Limit joint_limit = {
-                        .axes = {0, 0, 0},
-                        .min = min,
-                        .max = max,
-                        .stiffness = stiffness,
-                        .damping = damping
-                    };
-
-                    switch (axis.f) {
-                        case 0: joint_limit.axes.x = 1;
-                        case 1: joint_limit.axes.y = 1;
-                        case 2: joint_limit.axes.z = 1;
-                    }
-
-                    self.angular_limits.push(joint_limit);
-                }
-            }
-        }
-    }
-
-    if (try drives) {
-        foreach (drive: drives.array) {
-            Drive joint_drive;
-
-            joint_drive.axis = (uint)drive.get_int("axis") ?? 0;
-            joint_drive.position_target = (float)drive.get_float("positionTarget") ?? 0;
-            joint_drive.velocity_target = (float)drive.get_float("velocityTarget") ?? 0;
-            joint_drive.stiffness = (float)drive.get_float("stiffness") ?? 0;
-            joint_drive.damping = (float)drive.get_float("damping") ?? 0;
-
-            String? type = drive.get_string("type");
-            String? mode = drive.get_string("mode");
-
-            self.drives.push(joint_drive);
-        }
-    }
-    return self;
-}
-
-fn void PhysicsJoint.free(&self) {
-    self.linear_limits.free();
-    self.angular_limits.free();
-    self.drives.free();
-}
-
-fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json) {
-    self.static_friction = (float)json.get_float("staticFriction") ?? 0;
-    self.dynamic_friction = (float)json.get_float("dynamicFriction") ?? 0;
-    self.restitution = (float)json.get_float("restitution") ?? 0;
-    
-    String friction_combine = json.get_string("frictionCombine") ?? "multiply";
-    String restitution_combine = json.get_string("restitutionCombine") ?? "maximum";
-
-	switch (friction_combine) {
-		case "average": self.friction_combine = AVERAGE;
-		case "minimum": self.friction_combine = MINIMUM;
-		case "maximum": self.friction_combine = MAXIMUM;
-		case "multiply": self.friction_combine = MULTIPLY;
-		default: self.friction_combine = MULTIPLY;
+	if (try geometry)
+	{
+		self.convex_hull = geometry.get_bool("convexHull") ?? false;
+		self.shape = geometry.get_int("shape") ?? -1;
+		self.node = geometry.get_int("node") ?? -1;
 	}
 
-	switch (restitution_combine) {
-		case "average": self.restitution_combine = AVERAGE;
-		case "minimum": self.restitution_combine = MINIMUM;
-		case "maximum": self.restitution_combine = MAXIMUM;
-		case "multiply": self.restitution_combine = MULTIPLY;
-		default: self.restitution_combine = MAXIMUM;
+	self.material = json.get_int("physicsMaterial") ?? -1;
+	self.collision_filter = json.get_int("collisionFilter") ?? -1;
+
+	// Parse compound trigger nodes
+	if (try nodes)
+	{
+		foreach (node : nodes.array) self.nodes.push((uint)node.f);
 	}
 
-    return self;
+	return self;
 }
 
-macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f position)) {
-    Node node = self.nodes[node_index];
+fn void Collider.free(&self)
+{
+	self.nodes.free();
+}
 
-    foreach (i: node.children) {
-        Node collision_node = self.nodes[i];
-        if (collision_node.collider != null && collision_node.collider.node > -1) {
-            Node mesh_node = self.nodes[collision_node.collider.node];
-            Mesh collision_mesh = self.meshes[mesh_node.mesh];
-         
-            self.@get_positions(collision_mesh, Vec3f; Vec3f position) {
-                @callback(position);
-            }!;
-        }
-    }
+fn Motion Motion.from_json(self, Object* json)
+{
+	Object*? center_mass = json.get("centerOfMass");
+	Object*? inertia_diagonal = json.get("inertiaDiagonal");
+	Object*? inertia_orientation = json.get("inertiaOrientation");
+	Object*? linear_velocity = json.get("linearVelocity");
+	Object*? angular_velocity = json.get("angularVelocity");
+
+	if (try center_mass)
+	{
+		foreach (usz i, mass : center_mass.array)
+		{
+			self.mass_center[i] = (float)mass.f;
+		}
+	}
+
+	if (try inertia_diagonal)
+	{
+		foreach (usz i, inertia : inertia_diagonal.array)
+		{
+			self.inertia_diagonal[i] = (float)inertia.f;
+		}
+	}
+
+	if (try inertia_orientation)
+	{
+		foreach (usz i, inertia : inertia_orientation.array)
+		{
+			self.inertia_orientation.v[i] = (float)inertia.f;
+		}
+	}
+
+	if (try linear_velocity)
+	{
+		foreach (usz i, velocity : linear_velocity.array)
+		{
+			self.linear_velocity[i] = (float)velocity.f;
+		}
+	}
+
+	if (try angular_velocity)
+	{
+		foreach (usz i, velocity : angular_velocity.array)
+		{
+			self.angular_velocity[i] = (float)velocity.f;
+		}
+	}
+
+	self.is_kinematic = json.get_bool("isKinematic") ?? false;
+	self.mass = (float)json.get_float("mass") ?? 0;
+	self.gravity_factor = (float)json.get_float("gravityFactor") ?? 1;
+	self.linear_dampening = (float)json.get_float("linearDamping") ?? 0.9;
+	self.angular_dampening = (float)json.get_float("angularDamping") ?? 0.9;
+	return self;
+}
+
+fn CollisionFilter CollisionFilter.from_json(self, Object* json)
+{
+	Object*? systems = json.get("collisionSystems");
+	Object*? collide_with = json.get("collideWithSystems");
+	Object*? not_colliding = json.get("notCollideWithSystems");
+
+	if (try systems)
+	{
+		foreach (system : systems.array) self.systems.push(system.s);
+	}
+
+	if (try collide_with)
+	{
+		foreach (system : collide_with.array) self.colliding_with.push(system.s);
+	}
+
+	if (try not_colliding)
+	{
+		foreach (system : not_colliding.array) self.not_colliding.push(system.s);
+	}
+
+	return self;
+}
+
+fn void CollisionFilter.free(&self)
+{
+	self.systems.free();
+	self.not_colliding.free();
+	self.colliding_with.free();
+}
+
+fn Shape Shape.from_json(self, Object* json)
+{
+	String? type = json.get_string("type");
+
+	if (try type)
+	{
+		switch (type)
+		{
+			case "box":
+				{
+					Object*? box = json.get("box");
+					Object*? size = box.get("size");
+					self = {
+						.type = BOX,
+						.size = @ok(
+							size
+						) ? {
+							(float)size.get_at(0).f!!,
+							(float)size.get_at(1).f!!,
+							(float)size.get_at(2).f!!
+						} : { 0, 0, 0 }
+					};
+				}
+			case "sphere":
+				{
+					Object*? body = json.get("sphere");
+					float radius = (float)body.get_float("radius") ?? 0;
+					self = { .type = SPHERE, .radius = radius };
+				}
+			case "cylinder":
+				{
+					Object*? body = json.get("cylinder");
+					float height = (float)body.get_float("height") ?? 0;
+					float radius_bottom = (float)body.get_float("radiusBottom") ?? 0;
+					float radius_top = (float)body.get_float("radiusTop") ?? 0;
+
+					self = {
+						.type = CYLINDER,
+						.height = height,
+						.radius_bottom = radius_bottom,
+						.radius_top = radius_top
+					};
+				}
+			case "capsule":
+				{
+					Object*? body = json.get("capsule");
+					float height = (float)body.get_float("height") ?? 0;
+					float radius_bottom = (float)body.get_float("radiusBottom") ?? 0;
+					float radius_top = (float)body.get_float("radiusTop") ?? 0;
+
+					self = {
+						.type = CAPSULE,
+						.height = height,
+						.radius_bottom = radius_bottom,
+						.radius_top = radius_top
+					};
+				}
+		}
+	}
+
+	return self;
+}
+
+fn PhysicsJoint PhysicsJoint.from_json(self, Object* json)
+{
+	Object*? limits = json.get("limits");
+	Object*? drives = json.get("drives");
+
+	if (try limits)
+	{
+		foreach (limit : limits.array)
+		{
+			Object*? linear_axes = limit.get("linearAxes");
+			Object*? angular_axes = limit.get("angularAxes");
+
+			float min = (float)limit.get_float("min") ?? 0;
+			float max = (float)limit.get_float("max") ?? 0;
+
+			float stiffness = (float)limit.get_float("stiffness") ?? 0;
+			float damping = (float)limit.get_float("damping") ?? 0;
+
+			if (try linear_axes)
+			{
+				foreach (axis : linear_axes.array)
+				{
+					Limit joint_limit = {
+						.axes = { 0, 0, 0 },
+						.min = min,
+						.max = max,
+						.stiffness = stiffness,
+						.damping = damping
+					};
+
+					switch (axis.f)
+					{
+						case 0:
+							joint_limit.axes.x = 1;
+						case 1:
+							joint_limit.axes.y = 1;
+						case 2:
+							joint_limit.axes.z = 1;
+					}
+
+					self.linear_limits.push(joint_limit);
+				}
+			}
+
+			if (try angular_axes)
+			{
+				foreach (axis : angular_axes.array)
+				{
+					Limit joint_limit = {
+						.axes = { 0, 0, 0 },
+						.min = min,
+						.max = max,
+						.stiffness = stiffness,
+						.damping = damping
+					};
+
+					switch (axis.f)
+					{
+						case 0:
+							joint_limit.axes.x = 1;
+						case 1:
+							joint_limit.axes.y = 1;
+						case 2:
+							joint_limit.axes.z = 1;
+					}
+
+					self.angular_limits.push(joint_limit);
+				}
+			}
+		}
+	}
+
+	if (try drives)
+	{
+		foreach (drive : drives.array)
+		{
+			Drive joint_drive;
+
+			joint_drive.axis = (uint)drive.get_int("axis") ?? 0;
+			joint_drive.position_target = (float)drive.get_float("positionTarget") ?? 0;
+			joint_drive.velocity_target = (float)drive.get_float("velocityTarget") ?? 0;
+			joint_drive.stiffness = (float)drive.get_float("stiffness") ?? 0;
+			joint_drive.damping = (float)drive.get_float("damping") ?? 0;
+
+			String? type = drive.get_string("type");
+			String? mode = drive.get_string("mode");
+
+			self.drives.push(joint_drive);
+		}
+	}
+	return self;
+}
+
+fn void PhysicsJoint.free(&self)
+{
+	self.linear_limits.free();
+	self.angular_limits.free();
+	self.drives.free();
+}
+
+fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json)
+{
+	self.static_friction = (float)json.get_float("staticFriction") ?? 0;
+	self.dynamic_friction = (float)json.get_float("dynamicFriction") ?? 0;
+	self.restitution = (float)json.get_float("restitution") ?? 0;
+
+	String friction_combine = json.get_string("frictionCombine") ?? "multiply";
+	String restitution_combine = json.get_string("restitutionCombine") ?? "maximum";
+
+	switch (friction_combine)
+	{
+		case "average":
+			self.friction_combine = AVERAGE;
+		case "minimum":
+			self.friction_combine = MINIMUM;
+		case "maximum":
+			self.friction_combine = MAXIMUM;
+		case "multiply":
+			self.friction_combine = MULTIPLY;
+		default:
+			self.friction_combine = MULTIPLY;
+	}
+
+	switch (restitution_combine)
+	{
+		case "average":
+			self.restitution_combine = AVERAGE;
+		case "minimum":
+			self.restitution_combine = MINIMUM;
+		case "maximum":
+			self.restitution_combine = MAXIMUM;
+		case "multiply":
+			self.restitution_combine = MULTIPLY;
+		default:
+			self.restitution_combine = MAXIMUM;
+	}
+
+	return self;
+}
+
+macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f position))
+{
+	Node node = self.nodes[node_index];
+
+	foreach (i : node.children)
+	{
+		Node collision_node = self.nodes[i];
+		if (collision_node.collider != null && collision_node.collider.node > -1)
+		{
+			Node mesh_node = self.nodes[collision_node.collider.node];
+			Mesh collision_mesh = self.meshes[mesh_node.mesh];
+
+			self.@get_positions(collision_mesh, Vec3f ; Vec3f position)
+			{
+				@callback(position);
+			}!;
+		}
+	}
 }
 
 
-fn Vec3f decompose_joint(Node body, Node joint) {
-    return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4f){0, 0, 0, 1}).xyz * body.scale;
+fn Vec3f decompose_joint(Node body, Node joint)
+{
+	return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4f) { 0, 0, 0, 1 }).xyz * body.scale;
 }
