@@ -6,6 +6,7 @@
     "macos-x64" : {},
     "macos-aarch64" : {},
     "linux-x64" : {},
-    "windows-x64" : {}
+    "windows-x64" : {},
+    "wasm32" : {}
   }
 }

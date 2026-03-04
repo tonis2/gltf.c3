@@ -178,14 +178,14 @@ fn void* Gltf.get_data_array(&self, Accessor accessor)
 
 fn usz Gltf.get_offset(&self, ulong attribute)
 {
-	Accessor accessor = self.accessors[attribute];
+	Accessor accessor = self.accessors[(usz)attribute];
 	BufferView bufferView = self.bufferViews[accessor.view];
 	return accessor.offset + bufferView.offset;
 }
 
 fn BufferView Gltf.get_view(&self, ulong attribute)
 {
-	Accessor accessor = self.accessors[attribute];
+	Accessor accessor = self.accessors[(usz)attribute];
 	BufferView bufferView = self.bufferViews[accessor.view];
 	return bufferView;
 }

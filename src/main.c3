@@ -1212,7 +1212,7 @@ fn Gltf? loadFile(String path)
 	return parse(&file);
 }
 
-fn Gltf? parse(InStream stream)
+fn Gltf? parse(InStream stream, Allocator allocator = mem)
 {
 	Gltf content;
 	Object*? gltfJson;
@@ -1260,7 +1260,7 @@ fn Gltf? parse(InStream stream)
 		}
 
 		stream.seek(20, Seek.SET)!;
-		gltfJson = json::parse(mem, stream);
+		gltfJson = json::parse(allocator, stream);
 		stream.seek((usz)20 + json_chunk_length, Seek.SET)!;
 
 		if (catch err = stream.read(&binary_header))
@@ -1288,7 +1288,7 @@ fn Gltf? parse(InStream stream)
 	else
 	{
 		stream.seek(0, Seek.SET)!;
-		gltfJson = json::parse(mem, stream);
+		gltfJson = json::parse(allocator, stream);
 	}
 
 	if (catch err = gltfJson)
