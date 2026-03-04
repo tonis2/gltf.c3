@@ -555,29 +555,24 @@ fn void Mesh.from_json(&self, Object* json)
 			if (try material) data.attributes["material"] = material;
 			if (try mode) data.attributes["mode"] = mode;
 
-			@pool()
+			if (try attributes)
 			{
-				if (try attributes)
-				{
-					foreach (key : attributes.map.tkeys())
-					{
-						data.attributes[key] = (usz)attributes.map[key]!!.f;
-					}
-				}
+				attributes.map.@each(; String key, Object* val) {
+					data.attributes[key] = (usz)val.f;
+				};
+			}
 
-				if (try targets)
+			if (try targets)
+			{
+				foreach (target : targets.array)
 				{
-					foreach (target : targets.array)
-					{
-						AttributeMap target_attibutes;
-						foreach (key : target.map.tkeys())
-						{
-							target_attibutes[key] = (usz)target.map[key]!!.f;
-						}
-						data.targets.push(target_attibutes);
-					}
+					AttributeMap target_attibutes;
+					target.map.@each(; String key, Object* val) {
+						target_attibutes[key] = (usz)val.f;
+					};
+					data.targets.push(target_attibutes);
 				}
-			};
+			}
 
 			self.primitives.push(data);
 		}
