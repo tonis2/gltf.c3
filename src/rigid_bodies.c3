@@ -128,8 +128,10 @@ fn bool Collider.has_node(self) => self.node != -1;
 fn bool Collider.has_material(self) => self.material != -1;
 fn bool Collider.has_filter(self) => self.collision_filter != -1;
 
-fn Collider Collider.from_json(self, Object* json, bool is_trigger = false)
+fn Collider Collider.from_json(self, Object* json, bool is_trigger = false, Allocator allocator = mem)
 {
+	self.nodes.init(allocator);
+
 	Object*? geometry = json.get("geometry");
 	Object*? nodes = json.get("nodes");
 
@@ -220,8 +222,12 @@ fn Motion Motion.from_json(self, Object* json)
 	return self;
 }
 
-fn CollisionFilter CollisionFilter.from_json(self, Object* json)
+fn CollisionFilter CollisionFilter.from_json(self, Object* json, Allocator allocator = mem)
 {
+	self.systems.init(allocator);
+	self.not_colliding.init(allocator);
+	self.colliding_with.init(allocator);
+
 	Object*? systems = json.get("collisionSystems");
 	Object*? collide_with = json.get("collideWithSystems");
 	Object*? not_colliding = json.get("notCollideWithSystems");
@@ -314,8 +320,12 @@ fn Shape Shape.from_json(self, Object* json)
 	return self;
 }
 
-fn PhysicsJoint PhysicsJoint.from_json(self, Object* json)
+fn PhysicsJoint PhysicsJoint.from_json(self, Object* json, Allocator allocator = mem)
 {
+	self.angular_limits.init(allocator);
+	self.linear_limits.init(allocator);
+	self.drives.init(allocator);
+
 	Object*? limits = json.get("limits");
 	Object*? drives = json.get("drives");
 

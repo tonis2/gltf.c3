@@ -116,11 +116,12 @@ fn uint? Gltf.find_animation_index(Gltf* self, String name)
 	return KEY_NOT_FOUND~;
 }
 
-fn List {uint} Gltf.find_skin_animations(Gltf self, uint skin_index)
+fn List {uint} Gltf.find_skin_animations(Gltf self, uint skin_index, Allocator allocator = mem)
 {
 	gltf::Skin skin = self.skins[skin_index];
 
 	List {uint} results;
+	results.init(allocator);
 	foreach ANIMATIONS: (uint index, animation : self.animations)
 	{
 		foreach (joint_index : skin.joints)
@@ -202,6 +203,8 @@ macro void? Gltf.@get_positions(Gltf* self, Mesh mesh, #type; @callback(position
 {
 	List {Vec3f} positions;
 	List {ushort} indices;
+	positions.init(mem);
+	indices.init(mem);
 
 	defer
 	{

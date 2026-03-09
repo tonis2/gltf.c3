@@ -358,8 +358,9 @@ struct AnimationValue
 }
 
 // Parsing JSON to structs
-fn void Scene.from_json(&self, Object* json)
+fn void Scene.from_json(&self, Object* json, Allocator allocator)
 {
+	self.nodes.init(allocator);
 	String? name = json.get_string("name");
 	Object*? nodes = json.get("nodes");
 	if (try name) self.name = name.copy(mem);
@@ -372,8 +373,13 @@ fn void Scene.free(self)
 	self.name.free(mem);
 }
 
-fn void Node.from_json(&self, Object* json, Gltf* content)
+fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 {
+	self.children.init(allocator);
+	self.weights.init(allocator);
+	self.extras.init(allocator);
+	self.attributes.init(allocator);
+
 	self.mesh = json.get_int("mesh") ?? -1;
 	self.camera = json.get_int("camera") ?? -1;
 	self.skin = json.get_int("skin") ?? -1;
@@ -432,7 +438,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content)
 		if (try collider)
 		{
 			self.collider = (int)content.colliders.len();
-			Collider collider_data = (Collider) { }.from_json(collider);
+			Collider collider_data = (Collider) { }.from_json(collider, allocator: allocator);
 			collider_data.base_node = self.index;
 
 			if (collider_data.has_shape() == false)
@@ -447,7 +453,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content)
 		if (try trigger)
 		{
 			self.collider = (int)content.colliders.len();
-			Collider trigger_data = (Collider) { }.from_json(trigger, is_trigger: true);
+			Collider trigger_data = (Collider) { }.from_json(trigger, is_trigger: true, allocator: allocator);
 			trigger_data.base_node = self.index;
 
 			if (trigger_data.has_shape() == false)
@@ -527,8 +533,11 @@ fn void Node.free(&self)
 	self.extras.free();
 }
 
-fn void Mesh.from_json(&self, Object* json)
+fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 {
+	self.primitives.init(allocator);
+	self.weights.init(allocator);
+
 	String? name = json.get_string("name");
 	Object*? primitives = json.get("primitives");
 	Object*? weights = json.get("weights");
@@ -544,6 +553,9 @@ fn void Mesh.from_json(&self, Object* json)
 		foreach (primitive : primitives.array)
 		{
 			Primitive data;
+			data.attributes.init(allocator);
+			data.targets.init(allocator);
+
 			Object*? attributes = primitive.get("attributes");
 			Object*? targets = primitive.get("targets");
 
@@ -567,6 +579,7 @@ fn void Mesh.from_json(&self, Object* json)
 				foreach (target : targets.array)
 				{
 					AttributeMap target_attibutes;
+					target_attibutes.init(allocator);
 					target.map.@each(; String key, Object* val) {
 						target_attibutes[key] = (usz)val.f;
 					};
@@ -1046,8 +1059,11 @@ fn void Sampler.from_json(&self, Object* json)
 	}
 }
 
-fn void Animation.from_json(&self, Object* json)
+fn void Animation.from_json(&self, Object* json, Allocator allocator)
 {
+	self.samplers.init(allocator);
+	self.channels.init(allocator);
+
 	String? name = json.get_string("name");
 	Object*? channels = json.get("channels");
 	Object*? samplers = json.get("samplers");
@@ -1131,8 +1147,10 @@ fn void Animation.free(&self)
 	self.name.free(mem);
 }
 
-fn void Skin.from_json(&self, Object* json)
+fn void Skin.from_json(&self, Object* json, Allocator allocator)
 {
+	self.joints.init(allocator);
+
 	String? name = json.get_string("name");
 	Object*? joints = json.get("joints");
 
@@ -1210,6 +1228,30 @@ fn Gltf? loadFile(String path)
 fn Gltf? parse(InStream stream, Allocator allocator = mem)
 {
 	Gltf content;
+	// Explicitly init all Lists/HashMaps so they use the passed allocator
+	// instead of defaulting to tmem (which crashes on wasm32 second call).
+	content.nodes.init(allocator);
+	content.scenes.init(allocator);
+	content.meshes.init(allocator);
+	content.buffers.init(allocator);
+	content.bufferViews.init(allocator);
+	content.images.init(allocator);
+	content.accessors.init(allocator);
+	content.cameras.init(allocator);
+	content.samplers.init(allocator);
+	content.textures.init(allocator);
+	content.animations.init(allocator);
+	content.lights.init(allocator);
+	content.extensions.init(allocator);
+	content.materials.init(allocator);
+	content.skins.init(allocator);
+	content.shapes.init(allocator);
+	content.physics_joints.init(allocator);
+	content.physics_materials.init(allocator);
+	content.collision_filters.init(allocator);
+	content.colliders.init(allocator);
+	content.motions.init(allocator);
+
 	Object*? gltfJson;
 	char[12] gltf_header;
 	char[] binary_buffer;
@@ -1314,7 +1356,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		Object*? shapes = extension.get("shapes");
 		if (try shapes)
 		{
-			foreach (shape : shapes.array) content.shapes.push((Shape) { }.from_json(shape));
+			foreach (shape : shapes.array) content.shapes.push((Shape){}.from_json(shape));
 		}
 	};
 
@@ -1328,7 +1370,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		{
 			foreach (joint : physics_joints.array)
 			{
-				content.physics_joints.push((PhysicsJoint) { }.from_json(joint));
+				content.physics_joints.push((PhysicsJoint) { }.from_json(joint, allocator));
 			}
 		}
 
@@ -1344,7 +1386,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		{
 			foreach (filter : collision_filters.array)
 			{
-				content.collision_filters.push((CollisionFilter) { }.from_json(filter));
+				content.collision_filters.push((CollisionFilter) { }.from_json(filter, allocator));
 			}
 		}
 	};
@@ -1377,7 +1419,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (scene : scenes.array)
 		{
 			Scene data;
-			data.from_json(scene);
+			data.from_json(scene, allocator);
 			content.scenes.push(data);
 		}
 	}
@@ -1388,7 +1430,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (mesh : meshes.array)
 		{
 			Mesh data;
-			data.from_json(mesh);
+			data.from_json(mesh, allocator);
 			content.meshes.push(data);
 		}
 	}
@@ -1399,7 +1441,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (uint i, node : nodes.array)
 		{
 			Node data;
-			data.from_json(node, &content);
+			data.from_json(node, &content, allocator);
 			content.nodes.push(data);
 
 			if (data.name == "physicsMeshDataNode")
@@ -1511,7 +1553,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (animation : animations.array)
 		{
 			Animation data;
-			data.from_json(animation);
+			data.from_json(animation, allocator);
 
 			foreach (channel_index, channel : data.channels)
 			{
@@ -1540,7 +1582,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (skin : skins.array)
 		{
 			Skin data;
-			data.from_json(skin);
+			data.from_json(skin, allocator);
 			content.skins.push(data);
 		}
 	}
