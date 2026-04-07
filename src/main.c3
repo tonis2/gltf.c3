@@ -129,7 +129,15 @@ enum MinFilter
 	LINEAR_MIPMAP_LINEAR,
 }
 
-faultdef FILE_NOT_FOUND, FILE_NOT_READABLE, JSON_PARSE_FAILED, UNSUPPORTED_GLTF_VERSION, NO_BUFFER_VIEW, NO_BUFFER, BROKEN_BUFFER, KEY_NOT_FOUND;
+faultdef FILE_NOT_FOUND, FILE_NOT_READABLE, JSON_PARSE_FAILED, UNSUPPORTED_GLTF_VERSION, NO_BUFFER_VIEW, NO_BUFFER, BROKEN_BUFFER, KEY_NOT_FOUND, BUFFER_NOT_LOADED, IMAGE_NOT_LOADED;
+
+struct ParseResult
+{
+	Gltf gltf;
+	bool is_glb;
+	usz glb_binary_offset;
+	usz glb_binary_length;
+}
 
 struct Gltf
 {
@@ -323,10 +331,10 @@ struct BufferView
 
 struct Buffer
 {
-	char[] data;
-	char[] uri;
+	String uri;
 	uint size;
 	ResourceType type;
+	usz source_offset;
 }
 
 struct Image
@@ -334,7 +342,6 @@ struct Image
 	String name;
 	int view;
 	char[] uri;
-	char[] data;
 	ImageType mimeType;
 	ResourceType type;
 }
@@ -751,7 +758,7 @@ fn void? Image.from_json(&self, Object* json)
 		usz? offset = data_string.index_of_char(';');
 		self.type = ENCODED_BIN;
 
-		// Parse image data from base64
+		// Detect image type from base64 data URI, but defer decoding
 		if (try offset)
 		{
 			switch (uri[0..offset])
@@ -764,7 +771,7 @@ fn void? Image.from_json(&self, Object* json)
 					self.mimeType = IMAGE_BMP;
 			}
 			self.type = ENCODED_BASE64;
-			self.data = parse_base64(uri, uri.len)!;
+			self.uri = uri.copy(mem);
 		}
 		else
 		{
@@ -782,7 +789,6 @@ fn bool Image.hasView(self)
 fn void Image.free(&self)
 {
 	mem::free(self.uri);
-	mem::free(self.data);
 }
 
 fn void? Buffer.from_json(&self, Object* json)
@@ -808,14 +814,12 @@ fn void? Buffer.from_json(&self, Object* json)
 		else
 		{
 			self.type = ENCODED_BASE64;
-			self.data = parse_base64(self.uri, self.size)!;
 		}
 	}
 }
 
 fn void Buffer.free(&self)
 {
-	mem::free(self.data);
 	mem::free(self.uri);
 }
 
@@ -1211,23 +1215,10 @@ fn void Light.from_json(&self, Object* json)
 	}
 }
 
-fn Gltf? loadFile(String path)
+fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @private
 {
-	File? file = file::open(path, "r");
-	defer file.close()!!;
-
-	if (catch err = file)
-	{
-		io::printfn("Failed to find the gltf file");
-		return FILE_NOT_FOUND~;
-	}
-
-	return parse(&file);
-}
-
-fn Gltf? parse(InStream stream, Allocator allocator = mem)
-{
-	Gltf content;
+	ParseResult result;
+	Gltf* content = &result.gltf;
 	// Explicitly init all Lists/HashMaps so they use the passed allocator
 	// instead of defaulting to tmem (which crashes on wasm32 second call).
 	content.nodes.init(allocator);
@@ -1254,7 +1245,6 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 
 	Object*? gltfJson;
 	char[12] gltf_header;
-	char[] binary_buffer;
 
 	if (catch err = stream.read(&gltf_header))
 	{
@@ -1313,14 +1303,10 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 			return UNSUPPORTED_GLTF_VERSION~;
 		}
 
-		// Create binary buffer data
-		stream.seek((usz)gltf_size - binary_chunk_length, Seek.SET)!;
-		binary_buffer = mem::new_array(char, binary_chunk_length);
-
-		if (catch err = stream.read(binary_buffer))
-		{
-			return JSON_PARSE_FAILED~;
-		}
+		// Record GLB binary chunk layout for deferred loading
+		result.is_glb = true;
+		result.glb_binary_offset = (usz)gltf_size - binary_chunk_length;
+		result.glb_binary_length = binary_chunk_length;
 	}
 	else
 	{
@@ -1350,6 +1336,9 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 	Object*? textures = gltfJson.get("textures");
 	Object*? animations = gltfJson.get("animations");
 	Object*? skins = gltfJson.get("skins");
+	
+	// For GLB, buffer.source_offset is 0 (data starts at beginning of binary chunk)
+	// The absolute file offset is stored in result.glb_binary_offset
 
 	@when_extended(gltfJson, IMPLICIT_SHAPES_EXTENSION ; Object* extension)
 	{
@@ -1441,7 +1430,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (uint i, node : nodes.array)
 		{
 			Node data;
-			data.from_json(node, &content, allocator);
+			data.from_json(node, content, allocator);
 			content.nodes.push(data);
 
 			if (data.name == "physicsMeshDataNode")
@@ -1515,7 +1504,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		foreach (json : materials.array)
 		{
 			Material material;
-			material.from_json(json, content)!;
+			material.from_json(json, *content)!;
 			content.materials.push(material);
 		}
 	}
@@ -1526,13 +1515,13 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		{
 			Buffer data;
 			data.from_json(buffer)!;
+			
+			if (is_glb)
+			{
+				data.source_offset = 0;
+			}
+			
 			content.buffers.push(data);
-		}
-
-		if (is_glb)
-		{
-			Buffer* buffer = &content.buffers[0];
-			buffer.data = binary_buffer;
 		}
 	}
 
@@ -1601,7 +1590,7 @@ fn Gltf? parse(InStream stream, Allocator allocator = mem)
 		}
 	}
 
-	return content;
+	return result;
 }
 
 fn void Gltf.free(Gltf* self)
@@ -1637,6 +1626,8 @@ fn void Gltf.free(Gltf* self)
 	self.samplers.free();
 	self.lights.free();
 	self.extensions.free();
+	self.animations.free();
+	self.skins.free();
 }
 
 fn Node? Gltf.find_node(Gltf* self, String name)
@@ -1766,16 +1757,6 @@ fn char[]? parse_base64(char[] data, usz size) @private
 	}
 	return buffer_data;
 }
-
-fn char[]? Buffer.from_binary(self, InStream stream)
-{
-	char[] data = mem::new_array(char, self.size);
-	usz file_size = stream.seek(0, Seek.END)!;
-	stream.seek(file_size - self.size, Seek.SET)!;
-	stream.read(data)!;
-	return data;
-}
-
 macro @when_extended(Object* object, String extension_name; @callback(Object* extension))
 {
 	Object*? extension = object.get("extensions");
