@@ -603,8 +603,7 @@ macro void GltfStream.@run_animation_channels(
 				{
 					@callback(channel.target.node, channel.target.path, current_value);
 				}
-
-				if (sampler.interpolation == LINEAR)
+				else if (sampler.interpolation == LINEAR)
 				{
 					AnimationValue prev_value = {
 						.time = self.@cast_buffer(time_accessor, j - 1, float),
@@ -628,6 +627,39 @@ macro void GltfStream.@run_animation_channels(
 						default:
 							{
 							}
+					}
+
+					@callback(channel.target.node, channel.target.path, new_value);
+				}
+				else if (sampler.interpolation == CUBICSPLINE)
+				{
+					// CUBICSPLINE: each keyframe stores 3 Vec4f values:
+					// [in-tangent, value, out-tangent] at indices [j*3, j*3+1, j*3+2]
+					float prev_time = self.@cast_buffer(time_accessor, j - 1, float);
+					float dt = current_time - prev_time;
+					float t = (float)(frame_time - prev_time) / dt;
+					float t2 = t * t;
+					float t3 = t2 * t;
+
+					// Hermite basis functions
+					float h00 = 2 * t3 - 3 * t2 + 1;
+					float h10 = t3 - 2 * t2 + t;
+					float h01 = -2 * t3 + 3 * t2;
+					float h11 = t3 - t2;
+
+					Vec4f prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4f);
+					Vec4f prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4f);
+					Vec4f cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4f);
+					Vec4f cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4f);
+
+					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01 + cur_in_tangent * (dt * h11);
+
+					if (channel.target.path == ROTATION)
+					{
+						// Normalize quaternion result
+						float len = math::sqrt(new_value[0] * new_value[0] + new_value[1] * new_value[1]
+							+ new_value[2] * new_value[2] + new_value[3] * new_value[3]);
+						if (len > 0) { new_value = new_value / len; }
 					}
 
 					@callback(channel.target.node, channel.target.path, new_value);
@@ -728,4 +760,277 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 	}
 
 	io::printf(" \n _______ \n");
+}
+
+// --- Vertex attribute extraction macros ---
+
+macro void GltfStream.@each_position(&self, Primitive primitive; @callback(Vec3f position, usz index))
+{
+	usz? attr = primitive.attributes.get("POSITION");
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_normal(&self, Primitive primitive; @callback(Vec3f normal, usz index))
+{
+	usz? attr = primitive.attributes.get("NORMAL");
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4f tangent, usz index))
+{
+	usz? attr = primitive.attributes.get("TANGENT");
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, Vec4f), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @callback(Vec2f uv, usz index))
+{
+	String attr_name = string::tformat("TEXCOORD_%d", set);
+	usz? attr = primitive.attributes.get(attr_name);
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, Vec2f), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callback(Vec4f color, usz index))
+{
+	String attr_name = string::tformat("COLOR_%d", set);
+	usz? attr = primitive.attributes.get(attr_name);
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, Vec4f), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callback(ushort[<4>] joints, usz index))
+{
+	String attr_name = string::tformat("JOINTS_%d", set);
+	usz? attr = primitive.attributes.get(attr_name);
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, ushort[<4>]), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callback(Vec4f weights, usz index))
+{
+	String attr_name = string::tformat("WEIGHTS_%d", set);
+	usz? attr = primitive.attributes.get(attr_name);
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, Vec4f), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_index_as_ushort(&self, Primitive primitive; @callback(ushort index_val, usz index))
+{
+	usz? attr = primitive.attributes.get("indices");
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, ushort), i);
+		}
+	}
+}
+
+macro void GltfStream.@each_index_as_uint(&self, Primitive primitive; @callback(uint index_val, usz index))
+{
+	usz? attr = primitive.attributes.get("indices");
+	if (try attr)
+	{
+		Accessor accessor = self.gltf.accessors[attr];
+		for (usz i = 0; i < accessor.count; i++)
+		{
+			@callback(self.@cast_buffer(accessor, i, uint), i);
+		}
+	}
+}
+
+// --- Scene/node iteration macros ---
+
+// Walk all nodes in a scene depth-first using explicit stack.
+macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Node node, uint node_index))
+{
+	Scene scene = self.gltf.scenes[scene_index];
+	uint[256] stack;
+	usz stack_top = 0;
+
+	usz root_count = scene.nodes.len();
+	for (usz i = root_count; i > 0; i--)
+	{
+		stack[stack_top++] = scene.nodes[i - 1];
+	}
+
+	while (stack_top > 0)
+	{
+		uint node_index = stack[--stack_top];
+		Node node = self.gltf.nodes[node_index];
+		@callback(node, node_index);
+
+		usz child_count = node.children.len();
+		for (usz i = child_count; i > 0; i--)
+		{
+			stack[stack_top++] = node.children[i - 1];
+		}
+	}
+}
+
+macro void GltfStream.@each_mesh_in_scene(&self, uint scene_index; @callback(Mesh mesh, uint mesh_index, Node node, uint node_index))
+{
+	Scene scene = self.gltf.scenes[scene_index];
+	uint[256] stack;
+	usz stack_top = 0;
+
+	usz root_count = scene.nodes.len();
+	for (usz ri = root_count; ri > 0; ri--) { stack[stack_top++] = scene.nodes[ri - 1]; }
+
+	while (stack_top > 0)
+	{
+		uint node_index = stack[--stack_top];
+		Node node = self.gltf.nodes[node_index];
+		if (node.mesh >= 0)
+		{
+			@callback(self.gltf.meshes[(uint)node.mesh], (uint)node.mesh, node, node_index);
+		}
+		usz child_count = node.children.len();
+		for (usz ci = child_count; ci > 0; ci--) { stack[stack_top++] = node.children[ci - 1]; }
+	}
+}
+
+macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Light light, uint light_index, Node node))
+{
+	Scene scene = self.gltf.scenes[scene_index];
+	uint[256] stack;
+	usz stack_top = 0;
+
+	usz root_count = scene.nodes.len();
+	for (usz ri = root_count; ri > 0; ri--) { stack[stack_top++] = scene.nodes[ri - 1]; }
+
+	while (stack_top > 0)
+	{
+		uint node_index = stack[--stack_top];
+		Node node = self.gltf.nodes[node_index];
+		if (node.has_light())
+		{
+			@callback(self.gltf.lights[node.light], (uint)node.light, node);
+		}
+		usz child_count = node.children.len();
+		for (usz ci = child_count; ci > 0; ci--) { stack[stack_top++] = node.children[ci - 1]; }
+	}
+}
+
+macro void GltfStream.@each_camera_in_scene(&self, uint scene_index; @callback(Camera camera, uint camera_index, Node node))
+{
+	Scene scene = self.gltf.scenes[scene_index];
+	uint[256] stack;
+	usz stack_top = 0;
+
+	usz root_count = scene.nodes.len();
+	for (usz ri = root_count; ri > 0; ri--) { stack[stack_top++] = scene.nodes[ri - 1]; }
+
+	while (stack_top > 0)
+	{
+		uint node_index = stack[--stack_top];
+		Node node = self.gltf.nodes[node_index];
+		if (node.has_camera())
+		{
+			@callback(self.gltf.cameras[node.camera], (uint)node.camera, node);
+		}
+		usz child_count = node.children.len();
+		for (usz ci = child_count; ci > 0; ci--) { stack[stack_top++] = node.children[ci - 1]; }
+	}
+}
+
+// --- Morph target helpers ---
+
+macro void? GltfStream.@each_morph_position(&self, Primitive primitive, uint target_index; @callback(Vec3f delta, usz index))
+{
+	if (target_index < primitive.targets.len())
+	{
+		AttributeMap target = primitive.targets[target_index];
+		usz? attr = target.get("POSITION");
+		if (try attr)
+		{
+			Accessor accessor = self.gltf.accessors[attr];
+			for (usz i = 0; i < accessor.count; i++)
+			{
+				@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+			}
+		}
+	}
+}
+
+macro void? GltfStream.@each_morph_normal(&self, Primitive primitive, uint target_index; @callback(Vec3f delta, usz index))
+{
+	if (target_index < primitive.targets.len())
+	{
+		AttributeMap target = primitive.targets[target_index];
+		usz? attr = target.get("NORMAL");
+		if (try attr)
+		{
+			Accessor accessor = self.gltf.accessors[attr];
+			for (usz i = 0; i < accessor.count; i++)
+			{
+				@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+			}
+		}
+	}
+}
+
+// --- CPU skinning ---
+
+fn Vec3f GltfStream.skin_vertex(&self, Vec3f position, ushort[<4>] joints, Vec4f weights, Matrix4f[] joint_matrices)
+{
+	Vec4f pos = { position[0], position[1], position[2], 1.0 };
+	Vec4f skinned = {};
+
+	for (int i = 0; i < 4; i++)
+	{
+		if (weights[i] > 0.0)
+		{
+			Matrix4f mat = joint_matrices[joints[i]];
+			skinned += mat.apply(pos) * weights[i];
+		}
+	}
+
+	return { skinned[0], skinned[1], skinned[2] };
 }

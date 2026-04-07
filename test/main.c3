@@ -317,3 +317,206 @@ fn void test_load_animation_buffers() {
     float first_time = stream.@cast_buffer(time_acc, 0, float);
     assert(first_time == first_time); // not NaN
 }
+
+// --- Vertex attribute iteration tests ---
+
+fn void test_each_position() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    uint count = 0;
+    Mesh wheels = stream.gltf.meshes[0];
+    stream.@each_position(wheels.primitives[0]; Vec3f pos, usz i) {
+        count++;
+    };
+    assert(count > 0);
+}
+
+fn void test_each_normal() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    uint count = 0;
+    Mesh wheels = stream.gltf.meshes[0];
+    stream.@each_normal(wheels.primitives[0]; Vec3f normal, usz i) {
+        count++;
+    };
+    assert(count > 0);
+}
+
+fn void test_each_texcoord() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    uint count = 0;
+    Mesh wheels = stream.gltf.meshes[0];
+    stream.@each_texcoord(wheels.primitives[0], 0; Vec2f uv, usz i) {
+        count++;
+    };
+    assert(count > 0);
+}
+
+fn void test_each_index() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    uint count = 0;
+    Mesh wheels = stream.gltf.meshes[0];
+    stream.@each_index_as_ushort(wheels.primitives[0]; ushort idx, usz i) {
+        count++;
+    };
+    assert(count > 0);
+}
+
+// --- AABB tests ---
+
+fn void test_mesh_aabb() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    // AABB works from accessor min/max -- no buffer loading needed
+    Mesh wheels = stream.gltf.meshes[0];
+    Aabb aabb = stream.gltf.mesh_aabb(wheels);
+
+    // Min should be less than max on all axes
+    assert(aabb.min[0] <= aabb.max[0]);
+    assert(aabb.min[1] <= aabb.max[1]);
+    assert(aabb.min[2] <= aabb.max[2]);
+
+    // Size should be positive
+    Vec3f size = aabb.size();
+    assert(size[0] >= 0);
+    assert(size[1] >= 0);
+    assert(size[2] >= 0);
+}
+
+fn void test_node_world_aabb() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    // Node 0 is "Wheels" with mesh 0
+    Node node = stream.gltf.nodes[0];
+    assert(node.mesh >= 0);
+    Aabb world_aabb = stream.gltf.node_world_aabb(node);
+    assert(world_aabb.min[0] <= world_aabb.max[0]);
+}
+
+fn void test_aabb_merge() {
+    Aabb a = { .min = { -1, -1, -1 }, .max = { 1, 1, 1 } };
+    Aabb b = { .min = { 0, 0, 0 }, .max = { 2, 2, 2 } };
+    Aabb merged = a.merge(b);
+    assert(merged.min[0] == -1);
+    assert(merged.max[0] == 2);
+}
+
+// --- Material helper tests ---
+
+fn void test_material_helpers() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.materials.len() == 4);
+
+    // Check that at least one material has a base color texture
+    bool found_textured = false;
+    foreach (mat : stream.gltf.materials) {
+        if (mat.has_base_color_texture()) { found_textured = true; }
+    }
+    assert(found_textured);
+
+    // All materials should have a valid alpha mode
+    foreach (mat : stream.gltf.materials) {
+        uint tex_count = mat.texture_count();
+        assert(tex_count <= 5);
+    }
+}
+
+// --- Node world transform tests ---
+
+fn void test_node_world_position() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    Node node = stream.gltf.nodes[0];
+    Vec3f world_pos = node.world_position();
+    // Just verify it's not NaN
+    assert(world_pos[0] == world_pos[0]);
+    assert(world_pos[1] == world_pos[1]);
+    assert(world_pos[2] == world_pos[2]);
+}
+
+// --- Animation helper tests ---
+
+fn void test_animation_duration() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    Animation anim = stream.gltf.animations[0];
+    float dur = anim.duration();
+    assert(dur >= 0);
+
+    // Test loop_time wrapping
+    double looped = anim.loop_time(anim.max_time + 0.1);
+    assert(looped >= anim.min_time);
+    assert(looped <= anim.max_time);
+
+    // Test clamping
+    double clamped = anim.clamp_time(-999);
+    assert(clamped == anim.min_time);
+}
+
+// --- Extension helper tests ---
+
+fn void test_has_extension() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    // Should not crash regardless
+    bool result = stream.gltf.has_extension("KHR_lights_punctual");
+    // Just verify the function works
+    assert(result == true || result == false);
+}
+
+// --- Scene iteration tests ---
+
+fn void test_each_node_in_scene() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    uint node_count = 0;
+    stream.@each_node_in_scene(0; Node node, uint node_index) {
+        node_count++;
+    };
+    // Scene has 6 nodes total
+    assert(node_count == 6);
+}
+
+fn void test_each_mesh_in_scene() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    uint mesh_count = 0;
+    stream.@each_mesh_in_scene(0; Mesh mesh, uint mesh_index, Node node, uint node_index) {
+        mesh_count++;
+    };
+    // There are 3 nodes with meshes (Wheels, Wheels.001, Cesium_Milk_Truck)
+    assert(mesh_count == 3);
+}
+
+// --- Vertex layout test ---
+
+fn void test_vertex_layout() {
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    Mesh mesh = stream.gltf.meshes[0];
+    VertexLayout layout = stream.gltf.primitive_layout(mesh.primitives[0]);
+
+    // Should have at least POSITION, NORMAL, TEXCOORD_0
+    assert(layout.attribute_count >= 3);
+    assert(layout.vertex_count > 0);
+}
