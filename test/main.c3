@@ -520,3 +520,135 @@ fn void test_vertex_layout() {
     assert(layout.attribute_count >= 3);
     assert(layout.vertex_count > 0);
 }
+
+// --- Animation pointer resolution tests ---
+
+fn void test_resolve_pointer_node()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    PointerTarget t = stream.gltf.resolve_pointer("/nodes/0/translation");
+    defer t.free();
+    assert(t.category == NODE);
+    assert(t.index == 0);
+    assert(t.property == "translation");
+    assert(t.type == VEC3);
+    assert(t.raw == "/nodes/0/translation");
+
+    PointerTarget t2 = stream.gltf.resolve_pointer("/nodes/3/rotation");
+    defer t2.free();
+    assert(t2.category == NODE);
+    assert(t2.index == 3);
+    assert(t2.property == "rotation");
+    assert(t2.type == VEC4);
+
+    PointerTarget t3 = stream.gltf.resolve_pointer("/nodes/1/scale");
+    defer t3.free();
+    assert(t3.category == NODE);
+    assert(t3.property == "scale");
+    assert(t3.type == VEC3);
+}
+
+fn void test_resolve_pointer_material()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    PointerTarget t = stream.gltf.resolve_pointer("/materials/0/pbrMetallicRoughness/baseColorFactor");
+    defer t.free();
+    assert(t.category == MATERIAL);
+    assert(t.index == 0);
+    assert(t.property == "pbrMetallicRoughness/baseColorFactor");
+    assert(t.type == VEC4);
+
+    PointerTarget t2 = stream.gltf.resolve_pointer("/materials/2/emissiveFactor");
+    defer t2.free();
+    assert(t2.category == MATERIAL);
+    assert(t2.property == "emissiveFactor");
+    assert(t2.type == VEC3);
+
+    PointerTarget t3 = stream.gltf.resolve_pointer("/materials/0/alphaCutoff");
+    defer t3.free();
+    assert(t3.category == MATERIAL);
+    assert(t3.property == "alphaCutoff");
+    assert(t3.type == SCALAR);
+}
+
+fn void test_resolve_pointer_light()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    PointerTarget t = stream.gltf.resolve_pointer("/extensions/KHR_lights_punctual/lights/0/intensity");
+    defer t.free();
+    assert(t.category == LIGHT);
+    assert(t.index == 0);
+    assert(t.property == "intensity");
+    assert(t.type == SCALAR);
+
+    PointerTarget t2 = stream.gltf.resolve_pointer("/extensions/KHR_lights_punctual/lights/1/color");
+    defer t2.free();
+    assert(t2.category == LIGHT);
+    assert(t2.index == 1);
+    assert(t2.property == "color");
+    assert(t2.type == VEC3);
+}
+
+fn void test_resolve_pointer_camera()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    PointerTarget t = stream.gltf.resolve_pointer("/cameras/0/perspective/yfov");
+    defer t.free();
+    assert(t.category == CAMERA);
+    assert(t.index == 0);
+    assert(t.property == "perspective/yfov");
+    assert(t.type == SCALAR);
+}
+
+fn void test_resolve_pointer_texture_transform()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    PointerTarget t = stream.gltf.resolve_pointer("/materials/0/normalTexture/extensions/KHR_texture_transform/offset");
+    defer t.free();
+    assert(t.category == TEXTURE_TRANSFORM);
+    assert(t.index == 0);
+    assert(t.property == "normalTexture/extensions/KHR_texture_transform/offset");
+    assert(t.type == VEC2);
+}
+
+fn void test_resolve_pointer_custom()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    PointerTarget t = stream.gltf.resolve_pointer("/unknown/0/something");
+    defer t.free();
+    assert(t.category == CUSTOM);
+
+    PointerTarget t2 = stream.gltf.resolve_pointer("not_a_pointer");
+    defer t2.free();
+    assert(t2.category == CUSTOM);
+}
+
+fn void test_apply_pointer_value_material()
+{
+    GltfStream stream = gltf::open("test/truck.glb")!!;
+    defer stream.close();
+
+    Vec4f original_color = stream.gltf.materials[0].baseColorFactor;
+
+    PointerTarget t = stream.gltf.resolve_pointer("/materials/0/pbrMetallicRoughness/baseColorFactor");
+    defer t.free();
+
+    Vec4f new_color = { 0.5, 0.25, 0.75, 1.0 };
+    stream.gltf.apply_pointer_value(t, new_color);
+
+    assert(stream.gltf.materials[0].baseColorFactor[0] == 0.5);
+    assert(stream.gltf.materials[0].baseColorFactor[1] == 0.25);
+    assert(stream.gltf.materials[0].baseColorFactor[2] == 0.75);
+}

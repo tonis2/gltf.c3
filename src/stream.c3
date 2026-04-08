@@ -584,6 +584,8 @@ macro void GltfStream.@run_animation_channels(
 {
 	foreach (channel : animation.channels)
 	{
+		if (channel.target.path == POINTER) continue;
+
 		AnimationSampler sampler = animation.samplers[channel.sampler];
 		Accessor time_accessor = self.gltf.accessors[sampler.input];
 		Accessor value_accessor = self.gltf.accessors[sampler.output];
@@ -663,6 +665,78 @@ macro void GltfStream.@run_animation_channels(
 					}
 
 					@callback(channel.target.node, channel.target.path, new_value);
+				}
+
+				break TIMES;
+			}
+		}
+	}
+}
+
+macro void GltfStream.@run_pointer_channels(
+	&self,
+	double frame_time,
+	gltf::Animation animation; @callback(String pointer, Vec4f animation_value)
+)
+{
+	foreach (channel : animation.channels)
+	{
+		if (channel.target.path != POINTER) continue;
+
+		AnimationSampler sampler = animation.samplers[channel.sampler];
+		Accessor time_accessor = self.gltf.accessors[sampler.input];
+		Accessor value_accessor = self.gltf.accessors[sampler.output];
+
+		float max_frame_time = time_accessor.max[0];
+		float min_frame_time = time_accessor.min[0];
+
+		for TIMES: (ulong j; j < time_accessor.count; j++)
+		{
+			float current_time = self.@cast_buffer(time_accessor, j, float);
+
+			if (current_time > frame_time && frame_time < max_frame_time && current_time > min_frame_time)
+			{
+				Vec4f current_value = self.@cast_buffer(value_accessor, j, Vec4f);
+
+				if (sampler.interpolation == STEP)
+				{
+					@callback(channel.target.pointer, current_value);
+				}
+				else if (sampler.interpolation == LINEAR)
+				{
+					AnimationValue prev_value = {
+						.time = self.@cast_buffer(time_accessor, j - 1, float),
+						.value = self.@cast_buffer(value_accessor, j - 1, Vec4f),
+					};
+
+					float interpolation_value = (float)(frame_time - prev_value.time)
+						/ (float)(current_time - prev_value.time);
+
+					Vec4f new_value = prev_value.value + (current_value - prev_value.value) * interpolation_value;
+
+					@callback(channel.target.pointer, new_value);
+				}
+				else if (sampler.interpolation == CUBICSPLINE)
+				{
+					float prev_time = self.@cast_buffer(time_accessor, j - 1, float);
+					float dt = current_time - prev_time;
+					float t = (float)(frame_time - prev_time) / dt;
+					float t2 = t * t;
+					float t3 = t2 * t;
+
+					float h00 = 2 * t3 - 3 * t2 + 1;
+					float h10 = t3 - 2 * t2 + t;
+					float h01 = -2 * t3 + 3 * t2;
+					float h11 = t3 - t2;
+
+					Vec4f prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4f);
+					Vec4f prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4f);
+					Vec4f cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4f);
+					Vec4f cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4f);
+
+					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01 + cur_in_tangent * (dt * h11);
+
+					@callback(channel.target.pointer, new_value);
 				}
 
 				break TIMES;

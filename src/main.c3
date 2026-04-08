@@ -66,6 +66,25 @@ enum AnimationProperty
 	POINTER
 }
 
+enum PointerCategory
+{
+	NODE,
+	MATERIAL,
+	CAMERA,
+	LIGHT,
+	TEXTURE_TRANSFORM,
+	CUSTOM,
+}
+
+struct PointerTarget
+{
+	PointerCategory category;
+	uint index;
+	String property;
+	AccessorType type;
+	String raw;
+}
+
 enum LightType : uint
 {
 	DIRECTIONAL,
@@ -1146,6 +1165,10 @@ fn void Animation.from_json(&self, Object* json, Allocator allocator)
 
 fn void Animation.free(&self)
 {
+	foreach (channel : self.channels)
+	{
+		if (channel.target.path == POINTER) channel.target.pointer.free(mem);
+	}
 	self.channels.free();
 	self.samplers.free();
 	self.name.free(mem);

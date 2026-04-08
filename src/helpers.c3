@@ -6,6 +6,7 @@ import std::math;
 import std::collections::list;
 import std::encoding::json;
 import std::collections::map;
+import std::core::string;
 
 // --- Find by name ---
 
@@ -376,4 +377,278 @@ fn VertexLayout Gltf.primitive_layout(&self, Primitive primitive)
 	};
 
 	return layout;
+}
+
+// --- Animation pointer resolution ---
+
+fn void PointerTarget.free(&self)
+{
+	if (self.property.len > 0) self.property.free(mem);
+	if (self.raw.len > 0) self.raw.free(mem);
+}
+
+fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
+{
+	PointerTarget result;
+	result.raw = pointer.copy(mem);
+	result.property = "";
+	result.category = CUSTOM;
+	result.index = 0;
+	result.type = SCALAR;
+
+	if (pointer.len < 2 || pointer[0] != '/') { return result; }
+
+	usz? slash1 = pointer.index_of_char_from('/', 1);
+	if (try slash1)
+	{
+		String first = pointer[1..(slash1 - 1)];
+
+		switch (first)
+		{
+			case "nodes":
+				{
+					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					if (try slash2)
+					{
+						result.index = (uint)(pointer[slash1 + 1..(slash2 - 1)].to_uint() ?? 0u);
+						result.category = NODE;
+						String property_path = pointer[slash2 + 1..];
+						result.property = property_path.copy(mem);
+
+						switch (property_path)
+						{
+							case "translation": result.type = VEC3;
+							case "rotation": result.type = VEC4;
+							case "scale": result.type = VEC3;
+							case "weights": result.type = SCALAR;
+							default:
+								if (property_path.starts_with("weights/")) { result.type = SCALAR; }
+						}
+					}
+				}
+			case "materials":
+				{
+					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					if (try slash2)
+					{
+						result.index = (uint)(pointer[slash1 + 1..(slash2 - 1)].to_uint() ?? 0u);
+						result.category = MATERIAL;
+						String property_path = pointer[slash2 + 1..];
+						result.property = property_path.copy(mem);
+
+						switch (property_path)
+						{
+							case "alphaCutoff": result.type = SCALAR;
+							case "emissiveFactor": result.type = VEC3;
+							case "pbrMetallicRoughness/baseColorFactor": result.type = VEC4;
+							case "pbrMetallicRoughness/metallicFactor": result.type = SCALAR;
+							case "pbrMetallicRoughness/roughnessFactor": result.type = SCALAR;
+							case "normalTexture/scale": result.type = SCALAR;
+							case "occlusionTexture/strength": result.type = SCALAR;
+							case "normalTexture/extensions/KHR_texture_transform/offset": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "normalTexture/extensions/KHR_texture_transform/rotation": result.category = TEXTURE_TRANSFORM; result.type = SCALAR;
+							case "normalTexture/extensions/KHR_texture_transform/scale": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "occlusionTexture/extensions/KHR_texture_transform/offset": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "occlusionTexture/extensions/KHR_texture_transform/rotation": result.category = TEXTURE_TRANSFORM; result.type = SCALAR;
+							case "occlusionTexture/extensions/KHR_texture_transform/scale": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "emissiveTexture/extensions/KHR_texture_transform/offset": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "emissiveTexture/extensions/KHR_texture_transform/rotation": result.category = TEXTURE_TRANSFORM; result.type = SCALAR;
+							case "emissiveTexture/extensions/KHR_texture_transform/scale": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/rotation": result.category = TEXTURE_TRANSFORM; result.type = SCALAR;
+							case "pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/offset": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/rotation": result.category = TEXTURE_TRANSFORM; result.type = SCALAR;
+							case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/scale": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
+							default: {}
+						}
+					}
+				}
+			case "cameras":
+				{
+					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					if (try slash2)
+					{
+						result.index = (uint)(pointer[slash1 + 1..(slash2 - 1)].to_uint() ?? 0u);
+						result.category = CAMERA;
+						String property_path = pointer[slash2 + 1..];
+						result.property = property_path.copy(mem);
+
+						switch (property_path)
+						{
+							case "perspective/aspectRatio": result.type = SCALAR;
+							case "perspective/yfov": result.type = SCALAR;
+							case "perspective/zfar": result.type = SCALAR;
+							case "perspective/znear": result.type = SCALAR;
+							case "orthographic/xmag": result.type = SCALAR;
+							case "orthographic/ymag": result.type = SCALAR;
+							case "orthographic/zfar": result.type = SCALAR;
+							case "orthographic/znear": result.type = SCALAR;
+							default: {}
+						}
+					}
+				}
+			case "extensions":
+				{
+					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					if (try slash2)
+					{
+						String ext_name = pointer[slash1 + 1..(slash2 - 1)];
+
+						switch (ext_name)
+						{
+							case "KHR_lights_punctual":
+								{
+									usz? slash3 = pointer.index_of_char_from('/', slash2 + 1);
+									if (try slash3)
+									{
+										String lights_label = pointer[slash2 + 1..(slash3 - 1)];
+
+										switch (lights_label)
+										{
+											case "lights":
+												{
+													usz? slash4 = pointer.index_of_char_from('/', slash3 + 1);
+													if (try slash4)
+													{
+														result.index = (uint)(pointer[slash3 + 1..(slash4 - 1)].to_uint() ?? 0u);
+														result.category = LIGHT;
+														String property_path = pointer[slash4 + 1..];
+														result.property = property_path.copy(mem);
+
+														switch (property_path)
+														{
+															case "color": result.type = VEC3;
+															case "intensity": result.type = SCALAR;
+															case "range": result.type = SCALAR;
+															case "spot/innerConeAngle": result.type = SCALAR;
+															case "spot/outerConeAngle": result.type = SCALAR;
+															default: {}
+														}
+													}
+												}
+											default:
+												result.property = pointer[slash2 + 1..].copy(mem);
+										}
+									}
+								}
+							default:
+								result.property = pointer[slash1 + 1..].copy(mem);
+						}
+					}
+				}
+			default:
+				result.property = pointer[slash1 + 1..].copy(mem);
+		}
+	}
+
+	return result;
+}
+
+fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
+{
+	switch (target.category)
+	{
+		case NODE:
+			if (target.index >= self.nodes.len()) { return; }
+			Node* node = self.nodes.get_ref(target.index);
+			switch (target.property)
+			{
+				case "translation": node.translation = value.xyz;
+				case "rotation": node.rotation = { .v = value };
+				case "scale": node.scale = value.xyz;
+				case "weights":
+					{
+						if (node.weights.len() == 0 && node.mesh >= 0)
+						{
+							Mesh mesh = self.meshes[(uint)node.mesh];
+							for (usz i = 0; i < mesh.weights.len(); i++)
+							{
+								node.weights.push(0.0);
+							}
+						}
+						for (usz i = 0; i < node.weights.len(); i++)
+						{
+							node.weights[i] = value[i];
+						}
+					}
+				default:
+					if (target.property.starts_with("weights/"))
+					{
+						uint? idx = target.property[8..].to_uint();
+						if (try idx && (usz)idx < node.weights.len()) { node.weights[idx] = value[0]; }
+					}
+			}
+		case MATERIAL:
+			if (target.index >= self.materials.len()) { return; }
+			Material* mat = self.materials.get_ref(target.index);
+			switch (target.property)
+			{
+				case "pbrMetallicRoughness/baseColorFactor": mat.baseColorFactor = value;
+				case "pbrMetallicRoughness/metallicFactor": mat.metallicFactor = value[0];
+				case "pbrMetallicRoughness/roughnessFactor": mat.roughnessFactor = value[0];
+				case "emissiveFactor": mat.emissiveFactor = { value[0], value[1], value[2], 1.0 };
+				case "alphaCutoff": mat.alphaCutOff = value[0];
+				case "emissiveStrength": mat.emissiveStrength = value[0];
+				default: {}
+			}
+		case CAMERA:
+			if (target.index >= self.cameras.len()) { return; }
+			Camera* cam = &self.cameras[target.index];
+			switch (target.property)
+			{
+				case "perspective/yfov": cam.perspective.yfov = value[0];
+				case "perspective/znear": cam.perspective.znear = value[0];
+				case "perspective/zfar": cam.perspective.zfar = value[0];
+				case "perspective/aspectRatio": cam.perspective.aspectRatio = value[0];
+				case "orthographic/xmag": cam.perspective.aspectRatio = value[0];
+				case "orthographic/ymag": cam.perspective.yfov = value[0];
+				case "orthographic/zfar": cam.perspective.zfar = value[0];
+				case "orthographic/znear": cam.perspective.znear = value[0];
+				default: {}
+			}
+		case LIGHT:
+			if (target.index >= self.lights.len()) { return; }
+			Light* light = &self.lights[target.index];
+			switch (target.property)
+			{
+				case "color": light.color = { value[0], value[1], value[2] };
+				case "intensity": light.intensity = value[0];
+				case "range": light.range = value[0];
+				case "spot/innerConeAngle": light.inner_cone_angle = value[0];
+				case "spot/outerConeAngle": light.outer_cone_angle = value[0];
+				default: {}
+			}
+		case TEXTURE_TRANSFORM:
+			self.apply_texture_transform(target, value);
+		case CUSTOM:
+			break;
+	}
+}
+
+fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4f value)
+{
+	if (target.index >= self.materials.len()) { return; }
+	Material* mat = self.materials.get_ref(target.index);
+	String prop = target.property;
+
+	switch (prop)
+	{
+		case "normalTexture/extensions/KHR_texture_transform/offset": mat.normalTexture.offset = value.xy;
+		case "normalTexture/extensions/KHR_texture_transform/rotation": mat.normalTexture.rotation = value[0];
+		case "normalTexture/extensions/KHR_texture_transform/scale": mat.normalTexture.scale = value.xy;
+		case "occlusionTexture/extensions/KHR_texture_transform/offset": mat.occlusionTexture.offset = value.xy;
+		case "occlusionTexture/extensions/KHR_texture_transform/rotation": mat.occlusionTexture.rotation = value[0];
+		case "occlusionTexture/extensions/KHR_texture_transform/scale": mat.occlusionTexture.scale = value.xy;
+		case "emissiveTexture/extensions/KHR_texture_transform/offset": mat.emissiveTexture.offset = value.xy;
+		case "emissiveTexture/extensions/KHR_texture_transform/rotation": mat.emissiveTexture.rotation = value[0];
+		case "emissiveTexture/extensions/KHR_texture_transform/scale": mat.emissiveTexture.scale = value.xy;
+		case "pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset": mat.baseColorTexture.offset = value.xy;
+		case "pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/rotation": mat.baseColorTexture.rotation = value[0];
+		case "pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale": mat.baseColorTexture.scale = value.xy;
+		case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/offset": mat.metallicRoughnessTexture.offset = value.xy;
+		case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/rotation": mat.metallicRoughnessTexture.rotation = value[0];
+		case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/scale": mat.metallicRoughnessTexture.scale = value.xy;
+		default: {}
+	}
 }
