@@ -73,9 +73,9 @@ struct Drive
 
 struct PhysicsJoint
 {
-	List {Limit} angular_limits;
-	List {Limit} linear_limits;
-	List {Drive} drives;
+	List{Limit} angular_limits;
+	List{Limit} linear_limits;
+	List{Drive} drives;
 }
 
 struct PhysicsMaterial
@@ -89,9 +89,9 @@ struct PhysicsMaterial
 
 struct CollisionFilter
 {
-	List {String} systems;
-	List {String} not_colliding;
-	List {String} colliding_with;
+	List{String} systems;
+	List{String} not_colliding;
+	List{String} colliding_with;
 }
 
 struct Motion
@@ -119,7 +119,7 @@ struct Collider
 	int collision_filter;
 	int mesh;
 	int base_node;
-	List {uint} nodes; // For compound triggers
+	List{uint} nodes; // For compound triggers
 }
 
 fn bool Collider.has_mesh(self) => self.mesh != -1;

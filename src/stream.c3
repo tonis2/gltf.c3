@@ -25,7 +25,7 @@ struct BufferSlot
 	char* ptr;
 	usz len;
 	void* mmap_handle; // Opaque handle for cleanup (FileMmap* on POSIX)
-	char[] data;       // Only used when state == HEAP
+	char[] data; // Only used when state == HEAP
 }
 
 struct ImageSlot
@@ -105,11 +105,11 @@ fn void GltfStream.close(&self)
 
 	if (self.buffer_slots.len > 0)
 	{
-		allocator::free(self.allocator,self.buffer_slots);
+		allocator::free(self.allocator, self.buffer_slots);
 	}
 	if (self.image_slots.len > 0)
 	{
-		allocator::free(self.allocator,self.image_slots);
+		allocator::free(self.allocator, self.image_slots);
 	}
 
 	self.source_path.free(self.allocator);
@@ -204,19 +204,19 @@ fn void GltfStream.unload_buffer(&self, uint index)
 			$if env::LIBC &&& env::POSIX:
 				file::mmap::FileMmap* mm = slot.mmap_handle;
 				mm.destroy()!!;
-				allocator::free(self.allocator,mm);
+				allocator::free(self.allocator, mm);
 			$endif
 		case HEAP:
 			if (slot.data.len > 0)
 			{
-				allocator::free(self.allocator,slot.data);
+				allocator::free(self.allocator, slot.data);
 			}
 		default:
 	}
 
 	slot.ptr = null;
 	slot.len = 0;
-	slot.data = {};
+	slot.data = { };
 	slot.mmap_handle = null;
 	slot.state = UNLOADED;
 	slot.ref_count = 0;
@@ -226,14 +226,16 @@ fn bool GltfStream.is_buffer_loaded(&self, uint index) => self.buffer_slots[inde
 
 fn void? GltfStream.load_all_buffers(&self)
 {
-	foreach(uint i, buffer: self.gltf.buffers) {
+	foreach (uint i, buffer : self.gltf.buffers)
+	{
 		self.load_buffer(i)!;
 	}
 }
 
 fn void GltfStream.unload_all_buffers(&self)
 {
-	foreach(uint i, buffer: self.buffer_slots) {
+	foreach (uint i, buffer : self.buffer_slots)
+	{
 		self.force_unload_buffer(i);
 	}
 }
@@ -241,7 +243,10 @@ fn void GltfStream.unload_all_buffers(&self)
 fn void GltfStream.force_unload_buffer(&self, uint index)
 {
 	BufferSlot* slot = &self.buffer_slots[index];
-	if (slot.state == UNLOADED) { return; }
+	if (slot.state == UNLOADED)
+	{
+		return;
+	}
 
 	switch (slot.state)
 	{
@@ -261,7 +266,7 @@ fn void GltfStream.force_unload_buffer(&self, uint index)
 
 	slot.ptr = null;
 	slot.len = 0;
-	slot.data = {};
+	slot.data = { };
 	slot.mmap_handle = null;
 	slot.state = UNLOADED;
 	slot.ref_count = 0;
@@ -369,9 +374,9 @@ fn void GltfStream.unload_image(&self, uint index)
 
 	if (slot.data.len > 0)
 	{
-		allocator::free(self.allocator,slot.data);
+		allocator::free(self.allocator, slot.data);
 	}
-	slot.data = {};
+	slot.data = { };
 	slot.state = UNLOADED;
 	slot.ref_count = 0;
 }
@@ -389,12 +394,15 @@ fn void GltfStream.unload_all_images(&self)
 	for (uint i = 0; i < (uint)self.image_slots.len; i++)
 	{
 		ImageSlot* slot = &self.image_slots[i];
-		if (slot.state == UNLOADED) { continue; }
+		if (slot.state == UNLOADED)
+		{
+			continue;
+		}
 		if (slot.data.len > 0)
 		{
 			allocator::free(self.allocator, slot.data);
 		}
-		slot.data = {};
+		slot.data = { };
 		slot.state = UNLOADED;
 		slot.ref_count = 0;
 	}
@@ -404,11 +412,26 @@ fn void? GltfStream.load_material_images(&self, uint mat_index)
 {
 	Material mat = self.gltf.materials[mat_index];
 
-	if (mat.baseColorTexture.source >= 0) { self.load_image((uint)mat.baseColorTexture.source)!; }
-	if (mat.metallicRoughnessTexture.source >= 0) { self.load_image((uint)mat.metallicRoughnessTexture.source)!; }
-	if (mat.normalTexture.source >= 0) { self.load_image((uint)mat.normalTexture.source)!; }
-	if (mat.occlusionTexture.source >= 0) { self.load_image((uint)mat.occlusionTexture.source)!; }
-	if (mat.emissiveTexture.source >= 0) { self.load_image((uint)mat.emissiveTexture.source)!; }
+	if (mat.baseColorTexture.source >= 0)
+	{
+		self.load_image((uint)mat.baseColorTexture.source)!;
+	}
+	if (mat.metallicRoughnessTexture.source >= 0)
+	{
+		self.load_image((uint)mat.metallicRoughnessTexture.source)!;
+	}
+	if (mat.normalTexture.source >= 0)
+	{
+		self.load_image((uint)mat.normalTexture.source)!;
+	}
+	if (mat.occlusionTexture.source >= 0)
+	{
+		self.load_image((uint)mat.occlusionTexture.source)!;
+	}
+	if (mat.emissiveTexture.source >= 0)
+	{
+		self.load_image((uint)mat.emissiveTexture.source)!;
+	}
 }
 
 // --- Scene-level loading ---
@@ -654,14 +677,20 @@ macro void GltfStream.@run_animation_channels(
 					Vec4f cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4f);
 					Vec4f cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4f);
 
-					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01 + cur_in_tangent * (dt * h11);
+					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
+						+ cur_in_tangent * (dt * h11);
 
 					if (channel.target.path == ROTATION)
 					{
 						// Normalize quaternion result
-						float len = math::sqrt(new_value[0] * new_value[0] + new_value[1] * new_value[1]
-							+ new_value[2] * new_value[2] + new_value[3] * new_value[3]);
-						if (len > 0) { new_value = new_value / len; }
+						float len = math::sqrt(
+							new_value[0] * new_value[0] + new_value[1] * new_value[1] + new_value[2] * new_value[2]
+								+ new_value[3] * new_value[3]
+						);
+						if (len > 0)
+						{
+							new_value = new_value / len;
+						}
 					}
 
 					@callback(channel.target.node, channel.target.path, new_value);
@@ -734,7 +763,8 @@ macro void GltfStream.@run_pointer_channels(
 					Vec4f cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4f);
 					Vec4f cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4f);
 
-					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01 + cur_in_tangent * (dt * h11);
+					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
+						+ cur_in_tangent * (dt * h11);
 
 					@callback(channel.target.pointer, new_value);
 				}
@@ -759,8 +789,8 @@ macro void GltfStream.@build_skin_matrixes(&self, gltf::Skin skin; @callback(uin
 
 macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, #type; @callback(position, index))
 {
-	List {Vec3f} positions;
-	List {ushort} indices;
+	List{Vec3f} positions;
+	List{ushort} indices;
 	positions.init(mem);
 	indices.init(mem);
 
@@ -988,14 +1018,20 @@ macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Nod
 	}
 }
 
-macro void GltfStream.@each_mesh_in_scene(&self, uint scene_index; @callback(Mesh mesh, uint mesh_index, Node node, uint node_index))
+macro void GltfStream.@each_mesh_in_scene(
+	&self,
+	uint scene_index; @callback(Mesh mesh, uint mesh_index, Node node, uint node_index)
+)
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
 	usz stack_top = 0;
 
 	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--) { stack[stack_top++] = scene.nodes[ri - 1]; }
+	for (usz ri = root_count; ri > 0; ri--)
+	{
+		stack[stack_top++] = scene.nodes[ri - 1];
+	}
 
 	while (stack_top > 0)
 	{
@@ -1006,7 +1042,10 @@ macro void GltfStream.@each_mesh_in_scene(&self, uint scene_index; @callback(Mes
 			@callback(self.gltf.meshes[(uint)node.mesh], (uint)node.mesh, node, node_index);
 		}
 		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--) { stack[stack_top++] = node.children[ci - 1]; }
+		for (usz ci = child_count; ci > 0; ci--)
+		{
+			stack[stack_top++] = node.children[ci - 1];
+		}
 	}
 }
 
@@ -1017,7 +1056,10 @@ macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Li
 	usz stack_top = 0;
 
 	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--) { stack[stack_top++] = scene.nodes[ri - 1]; }
+	for (usz ri = root_count; ri > 0; ri--)
+	{
+		stack[stack_top++] = scene.nodes[ri - 1];
+	}
 
 	while (stack_top > 0)
 	{
@@ -1028,18 +1070,27 @@ macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Li
 			@callback(self.gltf.lights[node.light], (uint)node.light, node);
 		}
 		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--) { stack[stack_top++] = node.children[ci - 1]; }
+		for (usz ci = child_count; ci > 0; ci--)
+		{
+			stack[stack_top++] = node.children[ci - 1];
+		}
 	}
 }
 
-macro void GltfStream.@each_camera_in_scene(&self, uint scene_index; @callback(Camera camera, uint camera_index, Node node))
+macro void GltfStream.@each_camera_in_scene(
+	&self,
+	uint scene_index; @callback(Camera camera, uint camera_index, Node node)
+)
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
 	usz stack_top = 0;
 
 	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--) { stack[stack_top++] = scene.nodes[ri - 1]; }
+	for (usz ri = root_count; ri > 0; ri--)
+	{
+		stack[stack_top++] = scene.nodes[ri - 1];
+	}
 
 	while (stack_top > 0)
 	{
@@ -1050,13 +1101,20 @@ macro void GltfStream.@each_camera_in_scene(&self, uint scene_index; @callback(C
 			@callback(self.gltf.cameras[node.camera], (uint)node.camera, node);
 		}
 		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--) { stack[stack_top++] = node.children[ci - 1]; }
+		for (usz ci = child_count; ci > 0; ci--)
+		{
+			stack[stack_top++] = node.children[ci - 1];
+		}
 	}
 }
 
 // --- Morph target helpers ---
 
-macro void? GltfStream.@each_morph_position(&self, Primitive primitive, uint target_index; @callback(Vec3f delta, usz index))
+macro void? GltfStream.@each_morph_position(
+	&self,
+	Primitive primitive,
+	uint target_index; @callback(Vec3f delta, usz index)
+)
 {
 	if (target_index < primitive.targets.len())
 	{
@@ -1073,7 +1131,11 @@ macro void? GltfStream.@each_morph_position(&self, Primitive primitive, uint tar
 	}
 }
 
-macro void? GltfStream.@each_morph_normal(&self, Primitive primitive, uint target_index; @callback(Vec3f delta, usz index))
+macro void? GltfStream.@each_morph_normal(
+	&self,
+	Primitive primitive,
+	uint target_index; @callback(Vec3f delta, usz index)
+)
 {
 	if (target_index < primitive.targets.len())
 	{
@@ -1095,7 +1157,7 @@ macro void? GltfStream.@each_morph_normal(&self, Primitive primitive, uint targe
 fn Vec3f GltfStream.skin_vertex(&self, Vec3f position, ushort[<4>] joints, Vec4f weights, Matrix4f[] joint_matrices)
 {
 	Vec4f pos = { position[0], position[1], position[2], 1.0 };
-	Vec4f skinned = {};
+	Vec4f skinned = { };
 
 	for (int i = 0; i < 4; i++)
 	{

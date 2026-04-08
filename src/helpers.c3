@@ -14,7 +14,10 @@ fn Skin? Gltf.find_skin(Gltf* self, String name)
 {
 	foreach (data : self.skins)
 	{
-		if (data.name == name) { return data; }
+		if (data.name == name)
+		{
+			return data;
+		}
 	}
 	return KEY_NOT_FOUND~;
 }
@@ -23,7 +26,10 @@ fn Animation? Gltf.find_animation(Gltf* self, String name)
 {
 	foreach (data : self.animations)
 	{
-		if (data.name == name) { return data; }
+		if (data.name == name)
+		{
+			return data;
+		}
 	}
 	return KEY_NOT_FOUND~;
 }
@@ -32,16 +38,19 @@ fn uint? Gltf.find_animation_index(Gltf* self, String name)
 {
 	foreach (uint index, data : self.animations)
 	{
-		if (data.name == name) { return index; }
+		if (data.name == name)
+		{
+			return index;
+		}
 	}
 	return KEY_NOT_FOUND~;
 }
 
-fn List {uint} Gltf.find_skin_animations(Gltf self, uint skin_index, Allocator allocator = mem)
+fn List{uint} Gltf.find_skin_animations(Gltf self, uint skin_index, Allocator allocator = mem)
 {
 	gltf::Skin skin = self.skins[skin_index];
 
-	List {uint} results;
+	List{uint} results;
 	results.init(allocator);
 	foreach ANIMATIONS: (uint index, animation : self.animations)
 	{
@@ -148,7 +157,7 @@ fn Aabb Gltf.primitive_aabb(&self, Primitive primitive)
 		Accessor acc = self.accessors[pos_attr];
 		return { .min = acc.min.xyz, .max = acc.max.xyz };
 	}
-	return {};
+	return { };
 }
 
 // Get AABB for entire mesh (union of all primitives)
@@ -177,7 +186,10 @@ fn Aabb Gltf.mesh_aabb(&self, Mesh mesh)
 // Get world-space AABB for a node (applies global transform)
 fn Aabb Gltf.node_world_aabb(&self, Node node)
 {
-	if (node.mesh < 0) { return {}; }
+	if (node.mesh < 0)
+	{
+		return { };
+	}
 	Mesh mesh = self.meshes[(uint)node.mesh];
 	Aabb local = self.mesh_aabb(mesh);
 	return local.transform(node.global_matrix());
@@ -197,11 +209,8 @@ fn bool Material.is_masked(self) => self.alphaMode == MASK || self.alphaMode == 
 fn uint Material.texture_count(self)
 {
 	uint count = 0;
-	if (self.has_base_color_texture()) { count++; }
-	if (self.has_metallic_roughness_texture()) { count++; }
-	if (self.has_normal_map()) { count++; }
-	if (self.has_occlusion_texture()) { count++; }
-	if (self.has_emissive_texture()) { count++; }
+	bool[] checks = {self.has_base_color_texture() || self.has_normal_map() || self.has_occlusion_texture() || self.has_emissive_texture()};
+	foreach (item: checks) if (item) count++;
 	return count;
 }
 
@@ -226,7 +235,7 @@ fn Matrix4f Camera.projection_matrix(self, float aspect_override)
 			0, f, 0, 0,
 			0, 0, (far + near) * range_inv, 2.0 * far * near * range_inv,
 			0, 0, -1, 0,
-		};
+			};
 	}
 	else
 	{
@@ -236,7 +245,7 @@ fn Matrix4f Camera.projection_matrix(self, float aspect_override)
 			0, f, 0, 0,
 			0, 0, -1, -2.0 * near,
 			0, 0, -1, 0,
-		};
+			};
 	}
 }
 
@@ -267,12 +276,21 @@ fn Quaternionf Node.world_rotation(self)
 	float sy = @col_len(m.m01, m.m11, m.m21);
 	float sz = @col_len(m.m02, m.m12, m.m22);
 
-	if (sx == 0 || sy == 0 || sz == 0) { return { .v = { 0, 0, 0, 1 } }; }
+	if (sx == 0 || sy == 0 || sz == 0)
+	{
+		return { .v = { 0, 0, 0, 1 } };
+	}
 
 	// Normalized rotation matrix columns
-	float r00 = m.m00 / sx; float r01 = m.m01 / sy; float r02 = m.m02 / sz;
-	float r10 = m.m10 / sx; float r11 = m.m11 / sy; float r12 = m.m12 / sz;
-	float r20 = m.m20 / sx; float r21 = m.m21 / sy; float r22 = m.m22 / sz;
+	float r00 = m.m00 / sx;
+	float r01 = m.m01 / sy;
+	float r02 = m.m02 / sz;
+	float r10 = m.m10 / sx;
+	float r11 = m.m11 / sy;
+	float r12 = m.m12 / sz;
+	float r20 = m.m20 / sx;
+	float r21 = m.m21 / sy;
+	float r22 = m.m22 / sz;
 
 	float trace = r00 + r11 + r22;
 	Quaternionf q;
@@ -306,7 +324,10 @@ fn float Animation.duration(self) => self.max_time - self.min_time;
 fn double Animation.loop_time(self, double time)
 {
 	float dur = self.duration();
-	if (dur <= 0) { return self.min_time; }
+	if (dur <= 0)
+	{
+		return self.min_time;
+	}
 	double t = time - self.min_time;
 	t = t - math::floor(t / dur) * dur;
 	return t + self.min_time;
@@ -314,8 +335,14 @@ fn double Animation.loop_time(self, double time)
 
 fn double Animation.clamp_time(self, double time)
 {
-	if (time < self.min_time) { return self.min_time; }
-	if (time > self.max_time) { return self.max_time; }
+	if (time < self.min_time)
+	{
+		return self.min_time;
+	}
+	if (time > self.max_time)
+	{
+		return self.max_time;
+	}
 	return time;
 }
 
@@ -325,7 +352,10 @@ fn bool Gltf.has_extension(&self, String name)
 {
 	foreach (ext : self.extensions)
 	{
-		if (ext == name) { return true; }
+		if (ext == name)
+		{
+			return true;
+		}
 	}
 	return false;
 }
@@ -372,7 +402,10 @@ fn VertexLayout Gltf.primitive_layout(&self, Primitive primitive)
 			};
 			layout.attribute_count++;
 
-			if (acc.count > layout.vertex_count) { layout.vertex_count = acc.count; }
+			if (acc.count > layout.vertex_count)
+			{
+				layout.vertex_count = acc.count;
+			}
 		}
 	};
 
@@ -396,7 +429,10 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 	result.index = 0;
 	result.type = SCALAR;
 
-	if (pointer.len < 2 || pointer[0] != '/') { return result; }
+	if (pointer.len < 2 || pointer[0] != '/')
+	{
+		return result;
+	}
 
 	usz? slash1 = pointer.index_of_char_from('/', 1);
 	if (try slash1)
@@ -422,7 +458,10 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 							case "scale": result.type = VEC3;
 							case "weights": result.type = SCALAR;
 							default:
-								if (property_path.starts_with("weights/")) { result.type = SCALAR; }
+								if (property_path.starts_with("weights/"))
+								{
+									result.type = SCALAR;
+								}
 						}
 					}
 				}
@@ -460,7 +499,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 							case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/offset": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
 							case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/rotation": result.category = TEXTURE_TRANSFORM; result.type = SCALAR;
 							case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/scale": result.category = TEXTURE_TRANSFORM; result.type = VEC2;
-							default: {}
+							default: { }
 						}
 					}
 				}
@@ -484,7 +523,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 							case "orthographic/ymag": result.type = SCALAR;
 							case "orthographic/zfar": result.type = SCALAR;
 							case "orthographic/znear": result.type = SCALAR;
-							default: {}
+							default: { }
 						}
 					}
 				}
@@ -511,7 +550,8 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 													usz? slash4 = pointer.index_of_char_from('/', slash3 + 1);
 													if (try slash4)
 													{
-														result.index = (uint)(pointer[slash3 + 1..(slash4 - 1)].to_uint() ?? 0u);
+														result.index = (uint)(pointer[slash3
+															+ 1..(slash4 - 1)].to_uint() ?? 0u);
 														result.category = LIGHT;
 														String property_path = pointer[slash4 + 1..];
 														result.property = property_path.copy(mem);
@@ -523,7 +563,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 															case "range": result.type = SCALAR;
 															case "spot/innerConeAngle": result.type = SCALAR;
 															case "spot/outerConeAngle": result.type = SCALAR;
-															default: {}
+															default: { }
 														}
 													}
 												}
@@ -550,7 +590,10 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 	switch (target.category)
 	{
 		case NODE:
-			if (target.index >= self.nodes.len()) { return; }
+			if (target.index >= self.nodes.len())
+			{
+				return;
+			}
 			Node* node = self.nodes.get_ref(target.index);
 			switch (target.property)
 			{
@@ -576,11 +619,17 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 					if (target.property.starts_with("weights/"))
 					{
 						uint? idx = target.property[8..].to_uint();
-						if (try idx && (usz)idx < node.weights.len()) { node.weights[idx] = value[0]; }
+						if (try idx && (usz)idx < node.weights.len())
+						{
+							node.weights[idx] = value[0];
+						}
 					}
 			}
 		case MATERIAL:
-			if (target.index >= self.materials.len()) { return; }
+			if (target.index >= self.materials.len())
+			{
+				return;
+			}
 			Material* mat = self.materials.get_ref(target.index);
 			switch (target.property)
 			{
@@ -590,10 +639,13 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 				case "emissiveFactor": mat.emissiveFactor = { value[0], value[1], value[2], 1.0 };
 				case "alphaCutoff": mat.alphaCutOff = value[0];
 				case "emissiveStrength": mat.emissiveStrength = value[0];
-				default: {}
+				default: { }
 			}
 		case CAMERA:
-			if (target.index >= self.cameras.len()) { return; }
+			if (target.index >= self.cameras.len())
+			{
+				return;
+			}
 			Camera* cam = &self.cameras[target.index];
 			switch (target.property)
 			{
@@ -605,10 +657,13 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 				case "orthographic/ymag": cam.perspective.yfov = value[0];
 				case "orthographic/zfar": cam.perspective.zfar = value[0];
 				case "orthographic/znear": cam.perspective.znear = value[0];
-				default: {}
+				default: { }
 			}
 		case LIGHT:
-			if (target.index >= self.lights.len()) { return; }
+			if (target.index >= self.lights.len())
+			{
+				return;
+			}
 			Light* light = &self.lights[target.index];
 			switch (target.property)
 			{
@@ -617,7 +672,7 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 				case "range": light.range = value[0];
 				case "spot/innerConeAngle": light.inner_cone_angle = value[0];
 				case "spot/outerConeAngle": light.outer_cone_angle = value[0];
-				default: {}
+				default: { }
 			}
 		case TEXTURE_TRANSFORM:
 			self.apply_texture_transform(target, value);
@@ -628,7 +683,8 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 
 fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4f value)
 {
-	if (target.index >= self.materials.len()) { return; }
+	if (target.index >= self.materials.len()) return;
+
 	Material* mat = self.materials.get_ref(target.index);
 	String prop = target.property;
 
@@ -649,6 +705,6 @@ fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4f val
 		case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/offset": mat.metallicRoughnessTexture.offset = value.xy;
 		case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/rotation": mat.metallicRoughnessTexture.rotation = value[0];
 		case "pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform/scale": mat.metallicRoughnessTexture.scale = value.xy;
-		default: {}
+		default: { }
 	}
 }

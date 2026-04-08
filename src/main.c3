@@ -12,21 +12,21 @@ import std::encoding::json;
 import std::encoding::base64;
 import std::collections::map;
 
-alias SkinList = List {Skin};
-alias AttributeMap = HashMap {String, usz};
-alias Materials = List {Material};
-alias NodeList = List {Node};
+alias SkinList = List{Skin};
+alias AttributeMap = HashMap{String, usz};
+alias Materials = List{Material};
+alias NodeList = List{Node};
 
 alias Vec2f @private = float[<2>];
 alias Vec3f @private = float[<3>];
 alias Vec4f @private = float[<4>];
 
-const PUNCTUAL_LIGHT_EXTENSION = "KHR_lights_punctual";
-const TEXTURE_TRANSFORM_EXTENSION = "KHR_texture_transform";
-const ANIMATION_POINTER_EXTENSION = "KHR_animation_pointer";
+const PUNCTUAL_LIGHT_EXTENSION      = "KHR_lights_punctual";
+const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
+const ANIMATION_POINTER_EXTENSION   = "KHR_animation_pointer";
 const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
-const IMPLICIT_SHAPES_EXTENSION = "KHR_implicit_shapes";
-const RIGID_BODIES_EXTENSION = "KHR_physics_rigid_bodies";
+const IMPLICIT_SHAPES_EXTENSION     = "KHR_implicit_shapes";
+const RIGID_BODIES_EXTENSION        = "KHR_physics_rigid_bodies";
 
 enum Targets
 {
@@ -153,28 +153,28 @@ struct Gltf
 {
 	String name;
 	NodeList nodes;
-	List {Scene} scenes;
-	List {Mesh} meshes;
-	List {Buffer} buffers;
-	List {BufferView} bufferViews;
-	List {Image} images;
-	List {Accessor} accessors;
-	List {Camera} cameras;
-	List {Sampler} samplers;
-	List {Texture} textures;
-	List {Animation} animations;
-	List {Light} lights;
-	List {String} extensions;
+	List{Scene} scenes;
+	List{Mesh} meshes;
+	List{Buffer} buffers;
+	List{BufferView} bufferViews;
+	List{Image} images;
+	List{Accessor} accessors;
+	List{Camera} cameras;
+	List{Sampler} samplers;
+	List{Texture} textures;
+	List{Animation} animations;
+	List{Light} lights;
+	List{String} extensions;
 
 	Materials materials;
 	SkinList skins;
 
-	List {Shape} shapes;
-	List {PhysicsJoint} physics_joints;
-	List {PhysicsMaterial} physics_materials;
-	List {CollisionFilter} collision_filters;
-	List {Collider} colliders;
-	List {Motion} motions;
+	List{Shape} shapes;
+	List{PhysicsJoint} physics_joints;
+	List{PhysicsMaterial} physics_materials;
+	List{CollisionFilter} collision_filters;
+	List{Collider} colliders;
+	List{Motion} motions;
 }
 
 struct PointerTarget
@@ -189,7 +189,7 @@ struct PointerTarget
 struct Scene
 {
 	String name;
-	List {uint} nodes;
+	List{uint} nodes;
 }
 
 struct Node
@@ -212,9 +212,9 @@ struct Node
 	Matrix4f matrix;
 	Vec3f scale;
 	Vec3f translation;
-	List {uint} children;
-	List {float} weights;
-	HashMap {String, String} extras;
+	List{uint} children;
+	List{float} weights;
+	HashMap{String, String} extras;
 
 	Node* parent;
 	String name;
@@ -224,7 +224,7 @@ struct Node
 struct Primitive
 {
 	AttributeMap attributes;
-	List {AttributeMap} targets;
+	List{AttributeMap} targets;
 }
 
 struct Mesh
@@ -232,8 +232,8 @@ struct Mesh
 	String name;
 	usz scene;
 	bool convex_hull;
-	List {Primitive} primitives;
-	List {float} weights;
+	List{Primitive} primitives;
+	List{float} weights;
 }
 
 struct Animation
@@ -241,8 +241,8 @@ struct Animation
 	String name;
 	float max_time;
 	float min_time;
-	List {AnimationSampler} samplers;
-	List {Channel} channels;
+	List{AnimationSampler} samplers;
+	List{Channel} channels;
 }
 
 struct AnimationSampler
@@ -268,7 +268,7 @@ struct Skin
 	String name;
 	uint inverseBindAccessor;
 	uint skeleton;
-	List {uint} joints;
+	List{uint} joints;
 }
 
 struct TextureInfo
@@ -595,7 +595,8 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 
 			if (try attributes)
 			{
-				attributes.map.@each(; String key, Object* val) {
+				attributes.map.@each(; String key, Object* val)
+				{
 					data.attributes[key] = (usz)val.f;
 				};
 			}
@@ -606,7 +607,8 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 				{
 					AttributeMap target_attibutes;
 					target_attibutes.init(allocator);
-					target.map.@each(; String key, Object* val) {
+					target.map.@each(; String key, Object* val)
+					{
 						target_attibutes[key] = (usz)val.f;
 					};
 					data.targets.push(target_attibutes);
@@ -1359,7 +1361,7 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	Object*? textures = gltfJson.get("textures");
 	Object*? animations = gltfJson.get("animations");
 	Object*? skins = gltfJson.get("skins");
-	
+
 	// For GLB, buffer.source_offset is 0 (data starts at beginning of binary chunk)
 	// The absolute file offset is stored in result.glb_binary_offset
 
@@ -1368,7 +1370,7 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 		Object*? shapes = extension.get("shapes");
 		if (try shapes)
 		{
-			foreach (shape : shapes.array) content.shapes.push((Shape){}.from_json(shape));
+			foreach (shape : shapes.array) content.shapes.push((Shape) { }.from_json(shape));
 		}
 	};
 
@@ -1538,12 +1540,12 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 		{
 			Buffer data;
 			data.from_json(buffer)!;
-			
+
 			if (is_glb)
 			{
 				data.source_offset = 0;
 			}
-			
+
 			content.buffers.push(data);
 		}
 	}
@@ -1747,7 +1749,7 @@ fn Matrix4f to_matrix(Vec3f translation, Vec3f scale, Quaternionf rotation)
 		0.0,
 		0.0,
 		1.0,
-	};
+		};
 
 	Matrix4f scale_matrix = { scale.x, 0, 0, 0, 0, scale.y, 0, 0, 0, 0, scale.z, 0, 0.0, 0.0, 0.0, 1.0, };
 
