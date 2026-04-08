@@ -76,15 +76,6 @@ enum PointerCategory
 	CUSTOM,
 }
 
-struct PointerTarget
-{
-	PointerCategory category;
-	uint index;
-	String property;
-	AccessorType type;
-	String raw;
-}
-
 enum LightType : uint
 {
 	DIRECTIONAL,
@@ -184,6 +175,15 @@ struct Gltf
 	List {CollisionFilter} collision_filters;
 	List {Collider} colliders;
 	List {Motion} motions;
+}
+
+struct PointerTarget
+{
+	PointerCategory category;
+	uint index;
+	String property;
+	AccessorType type;
+	String raw;
 }
 
 struct Scene
