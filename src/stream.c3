@@ -85,14 +85,14 @@ fn GltfStream? open(String path, Allocator allocator = mem)
 	usz num_buffers = stream.gltf.buffers.len();
 	if (num_buffers > 0)
 	{
-		stream.buffer_slots = allocator::new_array(allocator, BufferSlot, num_buffers);
+		stream.buffer_slots = alloc::new_array(allocator, BufferSlot, num_buffers);
 	}
 
 	// Initialize image slots
 	usz num_images = stream.gltf.images.len();
 	if (num_images > 0)
 	{
-		stream.image_slots = allocator::new_array(allocator, ImageSlot, num_images);
+		stream.image_slots = alloc::new_array(allocator, ImageSlot, num_images);
 	}
 
 	return stream;
@@ -105,11 +105,11 @@ fn void GltfStream.close(&self)
 
 	if (self.buffer_slots.len > 0)
 	{
-		allocator::free(self.allocator, self.buffer_slots);
+		alloc::free(self.allocator, self.buffer_slots);
 	}
 	if (self.image_slots.len > 0)
 	{
-		allocator::free(self.allocator, self.image_slots);
+		alloc::free(self.allocator, self.image_slots);
 	}
 
 	self.source_path.free(self.allocator);
@@ -137,7 +137,7 @@ fn void? GltfStream.load_buffer(&self, uint index)
 			// GLB embedded binary -- mmap or read the binary chunk
 			usz file_offset = self.glb_binary_offset + buffer.source_offset;
 			$if env::LIBC &&& env::POSIX:
-				file::mmap::FileMmap* mm = allocator::new(self.allocator, file::mmap::FileMmap);
+				file::mmap::FileMmap* mm = alloc::new(self.allocator, file::mmap::FileMmap);
 				*mm = file::mmap_open(self.source_path, "r", file_offset, buffer.size)!;
 				slot.ptr = (char*)mm.vm.ptr + mm.offset;
 				slot.len = buffer.size;
@@ -147,7 +147,7 @@ fn void? GltfStream.load_buffer(&self, uint index)
 				// Fallback: read into heap
 				File file = file::open(self.source_path, "r")!;
 				defer file.close()!!;
-				slot.data = allocator::new_array(self.allocator, char, buffer.size);
+				slot.data = alloc::new_array(self.allocator, char, buffer.size);
 				file.seek(file_offset, Seek.SET)!;
 				file.read(slot.data)!;
 				slot.ptr = slot.data.ptr;
@@ -159,7 +159,7 @@ fn void? GltfStream.load_buffer(&self, uint index)
 			// External .bin file
 			String bin_path = string::tformat("%s/%s", self.source_dir, buffer.uri);
 			$if env::LIBC &&& env::POSIX:
-				file::mmap::FileMmap* mm = allocator::new(self.allocator, file::mmap::FileMmap);
+				file::mmap::FileMmap* mm = alloc::new(self.allocator, file::mmap::FileMmap);
 				*mm = file::mmap_open(bin_path, "r")!;
 				slot.ptr = (char*)mm.vm.ptr + mm.offset;
 				slot.len = buffer.size;
@@ -168,7 +168,7 @@ fn void? GltfStream.load_buffer(&self, uint index)
 			$else
 				File file = file::open(bin_path, "r")!;
 				defer file.close()!!;
-				slot.data = allocator::new_array(self.allocator, char, buffer.size);
+				slot.data = alloc::new_array(self.allocator, char, buffer.size);
 				file.read(slot.data)!;
 				slot.ptr = slot.data.ptr;
 				slot.len = buffer.size;
@@ -204,12 +204,12 @@ fn void GltfStream.unload_buffer(&self, uint index)
 			$if env::LIBC &&& env::POSIX:
 				file::mmap::FileMmap* mm = slot.mmap_handle;
 				mm.destroy()!!;
-				allocator::free(self.allocator, mm);
+				alloc::free(self.allocator, mm);
 			$endif
 		case HEAP:
 			if (slot.data.len > 0)
 			{
-				allocator::free(self.allocator, slot.data);
+				alloc::free(self.allocator, slot.data);
 			}
 		default:
 	}
@@ -254,12 +254,12 @@ fn void GltfStream.force_unload_buffer(&self, uint index)
 			$if env::LIBC &&& env::POSIX:
 				file::mmap::FileMmap* mm = slot.mmap_handle;
 				mm.destroy()!!;
-				allocator::free(self.allocator, mm);
+				alloc::free(self.allocator, mm);
 			$endif
 		case HEAP:
 			if (slot.data.len > 0)
 			{
-				allocator::free(self.allocator, slot.data);
+				alloc::free(self.allocator, slot.data);
 			}
 		default:
 	}
@@ -342,7 +342,7 @@ fn void? GltfStream.load_image(&self, uint index)
 
 				BufferSlot* buf_slot = &self.buffer_slots[view.buffer];
 				// Copy image data from buffer
-				slot.data = allocator::new_array(self.allocator, char, view.byteLength);
+				slot.data = alloc::new_array(self.allocator, char, view.byteLength);
 				mem::copy(slot.data.ptr, buf_slot.ptr + view.offset, view.byteLength);
 			}
 
@@ -352,7 +352,7 @@ fn void? GltfStream.load_image(&self, uint index)
 			defer file.close()!!;
 			usz file_size = file.seek(0, Seek.END)!;
 			file.seek(0, Seek.SET)!;
-			slot.data = allocator::new_array(self.allocator, char, file_size);
+			slot.data = alloc::new_array(self.allocator, char, file_size);
 			file.read(slot.data)!;
 	}
 
@@ -374,7 +374,7 @@ fn void GltfStream.unload_image(&self, uint index)
 
 	if (slot.data.len > 0)
 	{
-		allocator::free(self.allocator, slot.data);
+		alloc::free(self.allocator, slot.data);
 	}
 	slot.data = { };
 	slot.state = UNLOADED;
@@ -400,7 +400,7 @@ fn void GltfStream.unload_all_images(&self)
 		}
 		if (slot.data.len > 0)
 		{
-			allocator::free(self.allocator, slot.data);
+			alloc::free(self.allocator, slot.data);
 		}
 		slot.data = { };
 		slot.state = UNLOADED;

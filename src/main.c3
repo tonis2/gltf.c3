@@ -418,7 +418,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	self.rotation = { 0, 0, 0, 1 };
 	self.scale = { 1.0, 1.0, 1.0 };
 	self.translation = { 0, 0, 0 };
-	self.matrix = MATRIX4F_IDENTITY;
+	self.matrix = matrix::IDENTITY4;
 
 	String? name = json.get_string("name");
 	// Parse node transforms
@@ -1753,7 +1753,7 @@ fn Matrix4f to_matrix(Vec3f translation, Vec3f scale, Quaternionf rotation)
 
 	Matrix4f scale_matrix = { scale.x, 0, 0, 0, 0, scale.y, 0, 0, 0, 0, scale.z, 0, 0.0, 0.0, 0.0, 1.0, };
 
-	return translation_matrix * rotation.to_matrixf() * scale_matrix;
+	return translation_matrix * rotation.to_matrix() * scale_matrix;
 }
 
 fn Matrix4f Node.global_matrix(self)
