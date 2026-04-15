@@ -3,6 +3,7 @@ module gltf;
 import std::collections::object;
 import std::io;
 import std::math;
+import std::math::vector;
 import std::collections::list;
 import std::encoding::json;
 import std::collections::map;
@@ -95,13 +96,13 @@ fn BufferView Gltf.get_view(&self, ulong attribute)
 
 struct Aabb
 {
-	Vec3f min;
-	Vec3f max;
+	Vec3 min;
+	Vec3 max;
 }
 
-fn Vec3f Aabb.center(self) => (self.min + self.max) * 0.5;
-fn Vec3f Aabb.size(self) => self.max - self.min;
-fn Vec3f Aabb.extents(self) => (self.max - self.min) * 0.5;
+fn Vec3 Aabb.center(self) => (self.min + self.max) * 0.5;
+fn Vec3 Aabb.size(self) => self.max - self.min;
+fn Vec3 Aabb.extents(self) => (self.max - self.min) * 0.5;
 
 fn Aabb Aabb.merge(self, Aabb other)
 {
@@ -122,7 +123,7 @@ fn Aabb Aabb.merge(self, Aabb other)
 fn Aabb Aabb.transform(self, Matrix4f mat)
 {
 	// Transform all 8 corners and compute new AABB
-	Vec3f[8] corners = {
+	Vec3[8] corners = {
 		{ self.min[0], self.min[1], self.min[2] },
 		{ self.max[0], self.min[1], self.min[2] },
 		{ self.min[0], self.max[1], self.min[2] },
@@ -133,14 +134,14 @@ fn Aabb Aabb.transform(self, Matrix4f mat)
 		{ self.max[0], self.max[1], self.max[2] },
 	};
 
-	Vec4f first = mat.apply({ corners[0][0], corners[0][1], corners[0][2], 1.0 });
-	Vec3f new_min = { first[0], first[1], first[2] };
-	Vec3f new_max = new_min;
+	Vec4 first = mat.apply({ corners[0][0], corners[0][1], corners[0][2], 1.0 });
+	Vec3 new_min = { first[0], first[1], first[2] };
+	Vec3 new_max = new_min;
 
 	for (int i = 1; i < 8; i++)
 	{
-		Vec4f p = mat.apply({ corners[i][0], corners[i][1], corners[i][2], 1.0 });
-		Vec3f p3 = { p[0], p[1], p[2] };
+		Vec4 p = mat.apply({ corners[i][0], corners[i][1], corners[i][2], 1.0 });
+		Vec3 p3 = { p[0], p[1], p[2] };
 		new_min = { math::min(new_min[0], p3[0]), math::min(new_min[1], p3[1]), math::min(new_min[2], p3[2]) };
 		new_max = { math::max(new_max[0], p3[0]), math::max(new_max[1], p3[1]), math::max(new_max[2], p3[2]) };
 	}
@@ -251,7 +252,7 @@ fn Matrix4f Camera.projection_matrix(self, float aspect_override)
 
 // --- Node world transform decomposition ---
 
-fn Vec3f Node.world_position(self)
+fn Vec3 Node.world_position(self)
 {
 	Matrix4f m = self.global_matrix();
 	return { m.m03, m.m13, m.m23 };
@@ -259,7 +260,7 @@ fn Vec3f Node.world_position(self)
 
 macro float @col_len(float a, float b, float c) => (float)math::sqrt((double)(a * a + b * b + c * c));
 
-fn Vec3f Node.world_scale(self)
+fn Vec3 Node.world_scale(self)
 {
 	Matrix4f m = self.global_matrix();
 	float sx = @col_len(m.m00, m.m10, m.m20);
@@ -585,7 +586,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 	return result;
 }
 
-fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
+fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4 value)
 {
 	switch (target.category)
 	{
@@ -681,7 +682,7 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4f value)
 	}
 }
 
-fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4f value)
+fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4 value)
 {
 	if (target.index >= self.materials.len()) return;
 

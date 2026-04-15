@@ -8,6 +8,7 @@ import std::core::mem::allocator;
 import std::core::string;
 import std::math;
 import std::math::matrix;
+import std::math::vector;
 import std::collections::list;
 import std::encoding::base64;
 
@@ -602,7 +603,7 @@ fn char* GltfStream.get_data(&self, BufferView view)
 macro void GltfStream.@run_animation_channels(
 	&self,
 	double frame_time,
-	gltf::Animation animation; @callback(uint node_index, AnimationProperty path, Vec4f animation_value)
+	gltf::Animation animation; @callback(uint node_index, AnimationProperty path, Vec4 animation_value)
 )
 {
 	foreach (channel : animation.channels)
@@ -622,7 +623,7 @@ macro void GltfStream.@run_animation_channels(
 
 			if (current_time > frame_time && frame_time < max_frame_time && current_time > min_frame_time)
 			{
-				Vec4f current_value = self.@cast_buffer(value_accessor, j, Vec4f);
+				Vec4 current_value = self.@cast_buffer(value_accessor, j, Vec4);
 
 				if (sampler.interpolation == STEP)
 				{
@@ -632,10 +633,10 @@ macro void GltfStream.@run_animation_channels(
 				{
 					AnimationValue prev_value = {
 						.time = self.@cast_buffer(time_accessor, j - 1, float),
-						.value = self.@cast_buffer(value_accessor, j - 1, Vec4f),
+						.value = self.@cast_buffer(value_accessor, j - 1, Vec4),
 					};
 
-					Vec4f new_value;
+					Vec4 new_value;
 					float interpolation_value = (float)(frame_time - prev_value.time)
 						/ (float)(current_time - prev_value.time);
 
@@ -658,7 +659,7 @@ macro void GltfStream.@run_animation_channels(
 				}
 				else if (sampler.interpolation == CUBICSPLINE)
 				{
-					// CUBICSPLINE: each keyframe stores 3 Vec4f values:
+					// CUBICSPLINE: each keyframe stores 3 Vec4 values:
 					// [in-tangent, value, out-tangent] at indices [j*3, j*3+1, j*3+2]
 					float prev_time = self.@cast_buffer(time_accessor, j - 1, float);
 					float dt = current_time - prev_time;
@@ -672,12 +673,12 @@ macro void GltfStream.@run_animation_channels(
 					float h01 = -2 * t3 + 3 * t2;
 					float h11 = t3 - t2;
 
-					Vec4f prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4f);
-					Vec4f prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4f);
-					Vec4f cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4f);
-					Vec4f cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4f);
+					Vec4 prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4);
+					Vec4 prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4);
+					Vec4 cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4);
+					Vec4 cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4);
 
-					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
+					Vec4 new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
 						+ cur_in_tangent * (dt * h11);
 
 					if (channel.target.path == ROTATION)
@@ -705,7 +706,7 @@ macro void GltfStream.@run_animation_channels(
 macro void GltfStream.@run_pointer_channels(
 	&self,
 	double frame_time,
-	gltf::Animation animation; @callback(String pointer, Vec4f animation_value)
+	gltf::Animation animation; @callback(String pointer, Vec4 animation_value)
 )
 {
 	foreach (channel : animation.channels)
@@ -725,7 +726,7 @@ macro void GltfStream.@run_pointer_channels(
 
 			if (current_time > frame_time && frame_time < max_frame_time && current_time > min_frame_time)
 			{
-				Vec4f current_value = self.@cast_buffer(value_accessor, j, Vec4f);
+				Vec4 current_value = self.@cast_buffer(value_accessor, j, Vec4);
 
 				if (sampler.interpolation == STEP)
 				{
@@ -735,13 +736,13 @@ macro void GltfStream.@run_pointer_channels(
 				{
 					AnimationValue prev_value = {
 						.time = self.@cast_buffer(time_accessor, j - 1, float),
-						.value = self.@cast_buffer(value_accessor, j - 1, Vec4f),
+						.value = self.@cast_buffer(value_accessor, j - 1, Vec4),
 					};
 
 					float interpolation_value = (float)(frame_time - prev_value.time)
 						/ (float)(current_time - prev_value.time);
 
-					Vec4f new_value = prev_value.value + (current_value - prev_value.value) * interpolation_value;
+					Vec4 new_value = prev_value.value + (current_value - prev_value.value) * interpolation_value;
 
 					@callback(channel.target.pointer, new_value);
 				}
@@ -758,12 +759,12 @@ macro void GltfStream.@run_pointer_channels(
 					float h01 = -2 * t3 + 3 * t2;
 					float h11 = t3 - t2;
 
-					Vec4f prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4f);
-					Vec4f prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4f);
-					Vec4f cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4f);
-					Vec4f cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4f);
+					Vec4 prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4);
+					Vec4 prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4);
+					Vec4 cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4);
+					Vec4 cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4);
 
-					Vec4f new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
+					Vec4 new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
 						+ cur_in_tangent * (dt * h11);
 
 					@callback(channel.target.pointer, new_value);
@@ -789,7 +790,7 @@ macro void GltfStream.@build_skin_matrixes(&self, gltf::Skin skin; @callback(uin
 
 macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, #type; @callback(position, index))
 {
-	List{Vec3f} positions;
+	List{Vec3} positions;
 	List{ushort} indices;
 	positions.init(mem);
 	indices.init(mem);
@@ -807,7 +808,7 @@ macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, #type; @callb
 
 		for (usz i = 0; i < pos_accessor.count; i++)
 		{
-			Vec3f position = self.@cast_buffer(pos_accessor, i, Vec3f);
+			Vec3 position = self.@cast_buffer(pos_accessor, i, Vec3);
 			positions.push(position);
 		}
 
@@ -849,13 +850,13 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 				ushort value = bitcast(*(char[ushort.sizeof]*)data, ushort);
 				io::printfn("Parsed scalar %d", value);
 			case AccessorType.VEC2:
-				Vec2f vec = bitcast(*(char[Vec2f.sizeof]*)data, Vec2f);
+				Vec2 vec = bitcast(*(char[Vec2.sizeof]*)data, Vec2);
 				io::printfn("Parsed Vec2 %f %f", vec.x, vec.y);
 			case AccessorType.VEC3:
-				Vec3f vec = bitcast(*(char[Vec3f.sizeof]*)data, Vec3f);
+				Vec3 vec = bitcast(*(char[Vec3.sizeof]*)data, Vec3);
 				io::printfn("Parsed Vec3 %f %f %f", vec.x, vec.y, vec.z);
 			case AccessorType.VEC4:
-				Vec4f vec = bitcast(*(char[Vec4f.sizeof]*)data, Vec4f);
+				Vec4 vec = bitcast(*(char[Vec4.sizeof]*)data, Vec4);
 				io::printfn("Parsed Vec4 %f %f %f %f", vec.x, vec.y, vec.z, vec.w);
 			default:
 				{
@@ -868,7 +869,7 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 
 // --- Vertex attribute extraction macros ---
 
-macro void GltfStream.@each_position(&self, Primitive primitive; @callback(Vec3f position, usz index))
+macro void GltfStream.@each_position(&self, Primitive primitive; @callback(Vec3 position, usz index))
 {
 	usz? attr = primitive.attributes.get("POSITION");
 	if (try attr)
@@ -876,12 +877,12 @@ macro void GltfStream.@each_position(&self, Primitive primitive; @callback(Vec3f
 		Accessor accessor = self.gltf.accessors[attr];
 		for (usz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+			@callback(self.@cast_buffer(accessor, i, Vec3), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_normal(&self, Primitive primitive; @callback(Vec3f normal, usz index))
+macro void GltfStream.@each_normal(&self, Primitive primitive; @callback(Vec3 normal, usz index))
 {
 	usz? attr = primitive.attributes.get("NORMAL");
 	if (try attr)
@@ -889,12 +890,12 @@ macro void GltfStream.@each_normal(&self, Primitive primitive; @callback(Vec3f n
 		Accessor accessor = self.gltf.accessors[attr];
 		for (usz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+			@callback(self.@cast_buffer(accessor, i, Vec3), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4f tangent, usz index))
+macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4 tangent, usz index))
 {
 	usz? attr = primitive.attributes.get("TANGENT");
 	if (try attr)
@@ -902,12 +903,12 @@ macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4f 
 		Accessor accessor = self.gltf.accessors[attr];
 		for (usz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, Vec4f), i);
+			@callback(self.@cast_buffer(accessor, i, Vec4), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @callback(Vec2f uv, usz index))
+macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @callback(Vec2 uv, usz index))
 {
 	String attr_name = string::tformat("TEXCOORD_%d", set);
 	usz? attr = primitive.attributes.get(attr_name);
@@ -916,12 +917,12 @@ macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @call
 		Accessor accessor = self.gltf.accessors[attr];
 		for (usz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, Vec2f), i);
+			@callback(self.@cast_buffer(accessor, i, Vec2), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callback(Vec4f color, usz index))
+macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callback(Vec4 color, usz index))
 {
 	String attr_name = string::tformat("COLOR_%d", set);
 	usz? attr = primitive.attributes.get(attr_name);
@@ -930,7 +931,7 @@ macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callbac
 		Accessor accessor = self.gltf.accessors[attr];
 		for (usz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, Vec4f), i);
+			@callback(self.@cast_buffer(accessor, i, Vec4), i);
 		}
 	}
 }
@@ -949,7 +950,7 @@ macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callbac
 	}
 }
 
-macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callback(Vec4f weights, usz index))
+macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callback(Vec4 weights, usz index))
 {
 	String attr_name = string::tformat("WEIGHTS_%d", set);
 	usz? attr = primitive.attributes.get(attr_name);
@@ -958,7 +959,7 @@ macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callba
 		Accessor accessor = self.gltf.accessors[attr];
 		for (usz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, Vec4f), i);
+			@callback(self.@cast_buffer(accessor, i, Vec4), i);
 		}
 	}
 }
@@ -1113,7 +1114,7 @@ macro void GltfStream.@each_camera_in_scene(
 macro void? GltfStream.@each_morph_position(
 	&self,
 	Primitive primitive,
-	uint target_index; @callback(Vec3f delta, usz index)
+	uint target_index; @callback(Vec3 delta, usz index)
 )
 {
 	if (target_index < primitive.targets.len())
@@ -1125,7 +1126,7 @@ macro void? GltfStream.@each_morph_position(
 			Accessor accessor = self.gltf.accessors[attr];
 			for (usz i = 0; i < accessor.count; i++)
 			{
-				@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+				@callback(self.@cast_buffer(accessor, i, Vec3), i);
 			}
 		}
 	}
@@ -1134,7 +1135,7 @@ macro void? GltfStream.@each_morph_position(
 macro void? GltfStream.@each_morph_normal(
 	&self,
 	Primitive primitive,
-	uint target_index; @callback(Vec3f delta, usz index)
+	uint target_index; @callback(Vec3 delta, usz index)
 )
 {
 	if (target_index < primitive.targets.len())
@@ -1146,7 +1147,7 @@ macro void? GltfStream.@each_morph_normal(
 			Accessor accessor = self.gltf.accessors[attr];
 			for (usz i = 0; i < accessor.count; i++)
 			{
-				@callback(self.@cast_buffer(accessor, i, Vec3f), i);
+				@callback(self.@cast_buffer(accessor, i, Vec3), i);
 			}
 		}
 	}
@@ -1154,10 +1155,10 @@ macro void? GltfStream.@each_morph_normal(
 
 // --- CPU skinning ---
 
-fn Vec3f GltfStream.skin_vertex(&self, Vec3f position, ushort[<4>] joints, Vec4f weights, Matrix4f[] joint_matrices)
+fn Vec3 GltfStream.skin_vertex(&self, Vec3 position, ushort[<4>] joints, Vec4 weights, Matrix4f[] joint_matrices)
 {
-	Vec4f pos = { position[0], position[1], position[2], 1.0 };
-	Vec4f skinned = { };
+	Vec4 pos = { position[0], position[1], position[2], 1.0 };
+	Vec4 skinned = { };
 
 	for (int i = 0; i < 4; i++)
 	{

@@ -6,17 +6,14 @@ import std::math;
 import gltf;
 import std::collections::list;
 
-alias Vec2f @private = (float[<2>]);
-alias Vec3f @private = (float[<3>]);
-alias Vec4f @private = float[<4>];
 
 alias VertexList = List{Vertex};
 alias IndexList = List{ushort};
 
 struct Vertex {
-    Vec3f pos;
-    Vec2f tex;
-    Vec3f normal;
+    Vec3 pos;
+    Vec2 tex;
+    Vec3 normal;
 }
 
 // --- Metadata-only tests (no buffer loading) ---
@@ -92,7 +89,7 @@ fn void test_load_all_buffers() {
     Primitive prim = mesh.primitives[0];
     Accessor pos_accessor = stream.gltf.accessors[prim.attributes["POSITION"]!!];
 
-    Vec3f first_pos = stream.@cast_buffer(pos_accessor, 0, Vec3f);
+    Vec3 first_pos = stream.@cast_buffer(pos_accessor, 0, Vec3);
     // Just verify it's a reasonable value (not garbage)
     assert(first_pos[0] == first_pos[0]); // not NaN
 }
@@ -113,7 +110,7 @@ fn void test_load_mesh_buffers() {
     Accessor pos_accessor = stream.gltf.accessors[prim.attributes["POSITION"]!!];
     assert(pos_accessor.count > 0);
 
-    Vec3f pos = stream.@cast_buffer(pos_accessor, 0, Vec3f);
+    Vec3 pos = stream.@cast_buffer(pos_accessor, 0, Vec3);
     assert(pos[0] == pos[0]); // not NaN
 }
 
@@ -127,7 +124,7 @@ fn void test_load_mesh_by_name() {
     // Verify truck mesh data is accessible
     Mesh truck = stream.gltf.find_mesh("Cesium_Milk_Truck")!!;
     Accessor pos_accessor = stream.gltf.accessors[truck.primitives[0].attributes["POSITION"]!!];
-    Vec3f pos = stream.@cast_buffer(pos_accessor, 0, Vec3f);
+    Vec3 pos = stream.@cast_buffer(pos_accessor, 0, Vec3);
     assert(pos[0] == pos[0]);
 }
 
@@ -147,7 +144,7 @@ fn void test_load_scene() {
             usz? pos_attr = prim.attributes.get("POSITION");
             if (try pos_attr) {
                 Accessor acc = stream.gltf.accessors[pos_attr];
-                Vec3f v = stream.@cast_buffer(acc, 0, Vec3f);
+                Vec3 v = stream.@cast_buffer(acc, 0, Vec3);
                 assert(v[0] == v[0]);
             }
         }
@@ -215,14 +212,14 @@ fn void test_load_unload_reload() {
 
     Mesh mesh = stream.gltf.meshes[0];
     Accessor pos_acc = stream.gltf.accessors[mesh.primitives[0].attributes["POSITION"]!!];
-    Vec3f pos1 = stream.@cast_buffer(pos_acc, 0, Vec3f);
+    Vec3 pos1 = stream.@cast_buffer(pos_acc, 0, Vec3);
 
     stream.unload_all_buffers();
     assert(!stream.is_buffer_loaded(0));
 
     // Reload and verify same data
     stream.load_all_buffers()!!;
-    Vec3f pos2 = stream.@cast_buffer(pos_acc, 0, Vec3f);
+    Vec3 pos2 = stream.@cast_buffer(pos_acc, 0, Vec3);
 
     assert(pos1[0] == pos2[0]);
     assert(pos1[1] == pos2[1]);
@@ -284,9 +281,9 @@ fn void test_full_vertex_data() {
 
             for (uint i = 0; i < pos_accessor.count ; i += 1) {
                 vertices.push({
-                    stream.@cast_buffer(pos_accessor, i, Vec3f),
-                    stream.@cast_buffer(tex_accessor, i, Vec2f),
-                    stream.@cast_buffer(normal_accessor, i, Vec3f)
+                    stream.@cast_buffer(pos_accessor, i, Vec3),
+                    stream.@cast_buffer(tex_accessor, i, Vec2),
+                    stream.@cast_buffer(normal_accessor, i, Vec3)
                 });
             }
 
@@ -327,7 +324,7 @@ fn void test_each_position() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_position(wheels.primitives[0]; Vec3f pos, usz i) {
+    stream.@each_position(wheels.primitives[0]; Vec3 pos, usz i) {
         count++;
     };
     assert(count > 0);
@@ -340,7 +337,7 @@ fn void test_each_normal() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_normal(wheels.primitives[0]; Vec3f normal, usz i) {
+    stream.@each_normal(wheels.primitives[0]; Vec3 normal, usz i) {
         count++;
     };
     assert(count > 0);
@@ -353,7 +350,7 @@ fn void test_each_texcoord() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_texcoord(wheels.primitives[0], 0; Vec2f uv, usz i) {
+    stream.@each_texcoord(wheels.primitives[0], 0; Vec2 uv, usz i) {
         count++;
     };
     assert(count > 0);
@@ -388,7 +385,7 @@ fn void test_mesh_aabb() {
     assert(aabb.min[2] <= aabb.max[2]);
 
     // Size should be positive
-    Vec3f size = aabb.size();
+    Vec3 size = aabb.size();
     assert(size[0] >= 0);
     assert(size[1] >= 0);
     assert(size[2] >= 0);
@@ -442,7 +439,7 @@ fn void test_node_world_position() {
     defer stream.close();
 
     Node node = stream.gltf.nodes[0];
-    Vec3f world_pos = node.world_position();
+    Vec3 world_pos = node.world_position();
     // Just verify it's not NaN
     assert(world_pos[0] == world_pos[0]);
     assert(world_pos[1] == world_pos[1]);
@@ -640,12 +637,12 @@ fn void test_apply_pointer_value_material()
     GltfStream stream = gltf::open("test/truck.glb")!!;
     defer stream.close();
 
-    Vec4f original_color = stream.gltf.materials[0].baseColorFactor;
+    Vec4 original_color = stream.gltf.materials[0].baseColorFactor;
 
     PointerTarget t = stream.gltf.resolve_pointer("/materials/0/pbrMetallicRoughness/baseColorFactor");
     defer t.free();
 
-    Vec4f new_color = { 0.5, 0.25, 0.75, 1.0 };
+    Vec4 new_color = { 0.5, 0.25, 0.75, 1.0 };
     stream.gltf.apply_pointer_value(t, new_color);
 
     assert(stream.gltf.materials[0].baseColorFactor[0] == 0.5);

@@ -5,6 +5,7 @@ import std::collections::object;
 import std::io;
 import std::core::string;
 import std::math::matrix;
+import std::math::vector;
 import std::math;
 import std::core::mem;
 import std::collections::list;
@@ -16,10 +17,6 @@ alias SkinList = List{Skin};
 alias AttributeMap = HashMap{String, usz};
 alias Materials = List{Material};
 alias NodeList = List{Node};
-
-alias Vec2f @private = float[<2>];
-alias Vec3f @private = float[<3>];
-alias Vec4f @private = float[<4>];
 
 const PUNCTUAL_LIGHT_EXTENSION      = "KHR_lights_punctual";
 const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
@@ -210,8 +207,8 @@ struct Node
 
 	Quaternionf rotation;
 	Matrix4f matrix;
-	Vec3f scale;
-	Vec3f translation;
+	Vec3 scale;
+	Vec3 translation;
 	List{uint} children;
 	List{float} weights;
 	HashMap{String, String} extras;
@@ -275,8 +272,8 @@ struct TextureInfo
 {
 	inline Texture texture;
 	float rotation;
-	Vec2f offset;
-	Vec2f scale;
+	Vec2 offset;
+	Vec2 scale;
 }
 
 struct Material
@@ -287,8 +284,8 @@ struct Material
 	float emissiveStrength;
 	float metallicFactor;
 	float roughnessFactor;
-	Vec4f emissiveFactor;
-	Vec4f baseColorFactor;
+	Vec4 emissiveFactor;
+	Vec4 baseColorFactor;
 
 	TextureInfo normalTexture;
 	TextureInfo occlusionTexture;
@@ -335,8 +332,8 @@ struct Accessor
 	Mode mode;
 	DataType data_type;
 	AccessorType type;
-	Vec4f min;
-	Vec4f max;
+	Vec4 min;
+	Vec4 max;
 }
 
 struct BufferView
@@ -380,7 +377,7 @@ struct Light @align(64)
 struct AnimationValue
 {
 	float time;
-	Vec4f value;
+	Vec4 value;
 }
 
 // Parsing JSON to structs
@@ -1730,7 +1727,7 @@ fn uint Accessor.dataSize(Accessor self)
 // Returns matrix from node transform, scale, rotation
 fn Matrix4f Node.local_matrix(&self) => to_matrix(self.translation, self.scale, self.rotation);
 
-fn Matrix4f to_matrix(Vec3f translation, Vec3f scale, Quaternionf rotation)
+fn Matrix4f to_matrix(Vec3 translation, Vec3 scale, Quaternionf rotation)
 {
 	Matrix4f translation_matrix = {
 		1,

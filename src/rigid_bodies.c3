@@ -3,6 +3,7 @@ module gltf;
 import std::collections::object;
 import std::io;
 import std::math;
+import std::math::vector;
 import std::collections::list;
 import std::encoding::json;
 
@@ -42,7 +43,7 @@ enum PhysicsCombine : inline uint
 
 struct Shape
 {
-	Vec3f size;
+	Vec3 size;
 	float height;
 	float radius_bottom;
 	float radius_top;
@@ -52,7 +53,7 @@ struct Shape
 
 struct Limit
 {
-	Vec3f axes;
+	Vec3 axes;
 	float min;
 	float max;
 	float stiffness;
@@ -102,11 +103,11 @@ struct Motion
 	float linear_dampening;
 	float angular_dampening;
 
-	Vec3f mass_center;
-	Vec3f inertia_diagonal;
+	Vec3 mass_center;
+	Vec3 inertia_diagonal;
 	Quaternionf inertia_orientation;
-	Vec3f linear_velocity;
-	Vec3f angular_velocity;
+	Vec3 linear_velocity;
+	Vec3 angular_velocity;
 }
 
 struct Collider
@@ -464,7 +465,7 @@ fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json)
 	return self;
 }
 
-macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f position))
+macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3 position))
 {
 	Node node = self.nodes[node_index];
 
@@ -476,7 +477,7 @@ macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f
 			Node mesh_node = self.nodes[collision_node.collider.node];
 			Mesh collision_mesh = self.meshes[mesh_node.mesh];
 
-			self.@get_positions(collision_mesh, Vec3f ; Vec3f position)
+			self.@get_positions(collision_mesh, Vec3 ; Vec3 position)
 			{
 				@callback(position);
 			}!;
@@ -485,7 +486,7 @@ macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3f
 }
 
 
-fn Vec3f decompose_joint(Node body, Node joint)
+fn Vec3 decompose_joint(Node body, Node joint)
 {
-	return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4f) { 0, 0, 0, 1 }).xyz * body.scale;
+	return (body.global_matrix().inverse()!! * joint.global_matrix() * (Vec4) { 0, 0, 0, 1 }).xyz * body.scale;
 }
