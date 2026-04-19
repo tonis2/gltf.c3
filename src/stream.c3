@@ -1109,6 +1109,37 @@ macro void GltfStream.@each_camera_in_scene(
 	}
 }
 
+macro void GltfStream.@each_collider_in_scene(
+	&self,
+	uint scene_index; @callback(Collider collider, uint collider_index, Node node, uint node_index)
+)
+{
+	Scene scene = self.gltf.scenes[scene_index];
+	uint[256] stack;
+	usz stack_top = 0;
+
+	usz root_count = scene.nodes.len();
+	for (usz ri = root_count; ri > 0; ri--)
+	{
+		stack[stack_top++] = scene.nodes[ri - 1];
+	}
+
+	while (stack_top > 0)
+	{
+		uint node_index = stack[--stack_top];
+		Node node = self.gltf.nodes[node_index];
+		if (node.has_collider())
+		{
+			@callback(self.gltf.colliders[(uint)node.collider], (uint)node.collider, node, node_index);
+		}
+		usz child_count = node.children.len();
+		for (usz ci = child_count; ci > 0; ci--)
+		{
+			stack[stack_top++] = node.children[ci - 1];
+		}
+	}
+}
+
 // --- Morph target helpers ---
 
 macro void? GltfStream.@each_morph_position(

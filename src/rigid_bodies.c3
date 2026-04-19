@@ -128,6 +128,8 @@ fn bool Collider.has_shape(self) => self.shape != -1;
 fn bool Collider.has_node(self) => self.node != -1;
 fn bool Collider.has_material(self) => self.material != -1;
 fn bool Collider.has_filter(self) => self.collision_filter != -1;
+fn bool Collider.is_implicit(self) => self.shape != -1;
+fn bool Collider.is_mesh_collider(self) => self.shape == -1 && self.mesh != -1;
 
 fn Collider Collider.from_json(self, Object* json, bool is_trigger = false, Allocator allocator = mem)
 {
@@ -321,6 +323,35 @@ fn Shape Shape.from_json(self, Object* json)
 	return self;
 }
 
+fn Aabb Shape.aabb(self)
+{
+	switch (self.type)
+	{
+		case BOX:
+			Vec3 half = self.size * 0.5;
+			return { .min = -half, .max = half };
+		case SPHERE:
+			return {
+				.min = { -self.radius, -self.radius, -self.radius },
+				.max = { self.radius, self.radius, self.radius }
+			};
+		case CAPSULE:
+			float max_r = math::max(self.radius_bottom, self.radius_top);
+			float half_h = self.height * 0.5;
+			return {
+				.min = { -max_r, -half_h - max_r, -max_r },
+				.max = { max_r, half_h + max_r, max_r }
+			};
+		case CYLINDER:
+			float max_r = math::max(self.radius_bottom, self.radius_top);
+			float half_h = self.height * 0.5;
+			return {
+				.min = { -max_r, -half_h, -max_r },
+				.max = { max_r, half_h, max_r }
+			};
+	}
+}
+
 fn PhysicsJoint PhysicsJoint.from_json(self, Object* json, Allocator allocator = mem)
 {
 	self.angular_limits.init(allocator);
@@ -465,26 +496,142 @@ fn PhysicsMaterial PhysicsMaterial.from_json(self, Object* json)
 	return self;
 }
 
-macro void? Gltf.@get_compound_shape(Gltf self, uint node_index; @callback(Vec3 position))
+// Walk up parent chain to find the rigid body that owns this node's collider.
+// Returns null if no ancestor has motion (static collider).
+fn Node* Node.find_rigid_body(&self)
+{
+	Node* node = self;
+	while (node != null)
+	{
+		if (node.has_motion()) return node;
+		node = node.parent;
+	}
+	return null;
+}
+
+// Returns true if the node has a collider but no ancestor has motion.
+fn bool Gltf.is_static_collider(&self, uint node_index)
+{
+	Node* node = &self.nodes[node_index];
+	if (!node.has_collider()) return false;
+	return node.find_rigid_body() == null;
+}
+
+struct WorldShape
+{
+	ShapeType type;
+	Vec3 position;
+	Quaternionf rotation;
+	Vec3 size;
+	float radius;
+	float height;
+	float radius_bottom;
+	float radius_top;
+}
+
+// Get a collider's implicit shape transformed to world space.
+fn WorldShape Gltf.collider_world_shape(&self, uint node_index)
 {
 	Node node = self.nodes[node_index];
+	Collider collider = self.colliders[(uint)node.collider];
+	Shape shape = self.shapes[(uint)collider.shape];
 
-	foreach (i : node.children)
+	Vec3 pos = node.world_position();
+	Quaternionf rot = node.world_rotation();
+	Vec3 scl = node.world_scale();
+
+	WorldShape ws = {
+		.type = shape.type,
+		.position = pos,
+		.rotation = rot,
+	};
+
+	switch (shape.type)
 	{
-		Node collision_node = self.nodes[i];
-		if (collision_node.collider != null && collision_node.collider.node > -1)
-		{
-			Node mesh_node = self.nodes[collision_node.collider.node];
-			Mesh collision_mesh = self.meshes[mesh_node.mesh];
+		case BOX:
+			ws.size = {
+				shape.size[0] * scl[0],
+				shape.size[1] * scl[1],
+				shape.size[2] * scl[2]
+			};
+		case SPHERE:
+			ws.radius = shape.radius * math::max(scl[0], math::max(scl[1], scl[2]));
+		case CAPSULE:
+			float xz_scale = math::max(scl[0], scl[2]);
+			ws.height = shape.height * scl[1];
+			ws.radius_bottom = shape.radius_bottom * xz_scale;
+			ws.radius_top = shape.radius_top * xz_scale;
+		case CYLINDER:
+			float xz_scale = math::max(scl[0], scl[2]);
+			ws.height = shape.height * scl[1];
+			ws.radius_bottom = shape.radius_bottom * xz_scale;
+			ws.radius_top = shape.radius_top * xz_scale;
+	}
 
-			self.@get_positions(collision_mesh, Vec3 ; Vec3 position)
-			{
-				@callback(position);
-			}!;
+	return ws;
+}
+
+// Get world-space AABB for a collider node.
+fn Aabb Gltf.collider_aabb(&self, uint node_index)
+{
+	Node node = self.nodes[node_index];
+	Collider collider = self.colliders[(uint)node.collider];
+
+	if (collider.is_implicit())
+	{
+		Shape shape = self.shapes[(uint)collider.shape];
+		return shape.aabb().transform(node.global_matrix());
+	}
+
+	if (collider.has_mesh())
+	{
+		return self.node_world_aabb(node);
+	}
+
+	return { };
+}
+
+// Iterate all colliders belonging to a single rigid body (compound shapes).
+// Walks descendants of body_node_index; skips nodes with their own motion (independent bodies).
+macro void Gltf.@each_collider_for_body(Gltf self, uint body_node_index; @callback(Collider collider, uint collider_index, Node node, uint node_index))
+{
+	uint[256] stack;
+	usz stack_top = 0;
+
+	// Check the body node itself
+	Node body_node = self.nodes[body_node_index];
+	if (body_node.has_collider())
+	{
+		@callback(self.colliders[(uint)body_node.collider], (uint)body_node.collider, body_node, body_node_index);
+	}
+
+	// Push children
+	usz child_count = body_node.children.len();
+	for (usz i = child_count; i > 0; i--)
+	{
+		stack[stack_top++] = body_node.children[i - 1];
+	}
+
+	while (stack_top > 0)
+	{
+		uint node_index = stack[--stack_top];
+		Node node = self.nodes[node_index];
+
+		// Skip nodes with their own motion (independent rigid bodies)
+		if (node.has_motion()) continue;
+
+		if (node.has_collider())
+		{
+			@callback(self.colliders[(uint)node.collider], (uint)node.collider, node, node_index);
+		}
+
+		usz cc = node.children.len();
+		for (usz i = cc; i > 0; i--)
+		{
+			stack[stack_top++] = node.children[i - 1];
 		}
 	}
 }
-
 
 fn Vec3 decompose_joint(Node body, Node joint)
 {
