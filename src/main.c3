@@ -1730,22 +1730,10 @@ fn Matrix4f Node.local_matrix(&self) => to_matrix(self.translation, self.scale, 
 fn Matrix4f to_matrix(Vec3 translation, Vec3 scale, Quaternionf rotation)
 {
 	Matrix4f translation_matrix = {
-		1,
-		0,
-		0,
-		translation.x,
-		0,
-		1,
-		0,
-		translation.y,
-		0,
-		0,
-		1,
-		translation.z,
-		0.0,
-		0.0,
-		0.0,
-		1.0,
+		1, 0, 0, 0,                                        // column 0
+		0, 1, 0, 0,                                        // column 1
+		0, 0, 1, 0,                                        // column 2
+		translation.x, translation.y, translation.z, 1.0,  // column 3
 		};
 
 	Matrix4f scale_matrix = { scale.x, 0, 0, 0, 0, scale.y, 0, 0, 0, 0, scale.z, 0, 0.0, 0.0, 0.0, 1.0, };

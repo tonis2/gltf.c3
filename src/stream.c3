@@ -571,7 +571,7 @@ macro GltfStream.@cast_buffer(&self, #target, usz index, #type)
 		}
 	$else
 		{
-			accessor = self.gltf.accessors[#target]!;
+			accessor = self.gltf.accessors[#target];
 		}
 	$endif
 
