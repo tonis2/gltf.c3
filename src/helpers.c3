@@ -709,3 +709,44 @@ fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4 valu
 		default: { }
 	}
 }
+
+// --- List transform helpers ---
+//
+// Generic helpers usable on any List{T}; live in the gltf module since the
+// glTF→GPU upload path is the primary user.
+
+<*
+ Map each element of a List into a new List of $NewType.
+ Pass a lambda `fn (elem) => ...` that returns the mapped value.
+
+ Example:
+   List{MaterialData} mats = stream.gltf.materials.@map(MaterialData,
+       fn (mat) => (MaterialData){
+           .baseColorFactor = mat.baseColorFactor,
+           .emissiveFactor  = mat.emissiveFactor,
+       });
+*>
+macro List.@map(&self, $NewType, #operation)
+{
+	$typefrom(@typeid(fn $NewType (Type t) => ($NewType){})) $func = #operation;
+	List{$NewType} result;
+	result.reserve(self.len());
+	foreach (e : *self) result.push($func(e));
+	return result;
+}
+
+<*
+ Map each element of `src` and push results into `self`.
+ Pass a lambda `fn (elem) => ...` that returns the destination element type.
+
+ Example:
+   List{NodeData} nodes;
+   nodes.@push_mapped(stream.gltf.nodes,
+       fn (n) => (NodeData){ .matrix = n.global_matrix() });
+*>
+macro void List.@push_mapped(&self, src, #operation)
+{
+	$typefrom(@typeid(fn Type ($typeof(src[0]) t) => (Type){})) $func = #operation;
+	self.reserve(src.len());
+	foreach (e : src) self.push($func(e));
+}

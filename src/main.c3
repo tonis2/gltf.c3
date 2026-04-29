@@ -859,9 +859,15 @@ fn void Camera.from_json(&self, Object* json)
 				float? zfar = (float)perspective.get_float("zfar");
 				float? znear = (float)perspective.get_float("znear");
 
-				if (try aspectRatio && try yfov && try zfar && try znear)
+				// aspectRatio is optional per glTF 2.0 spec — renderer uses viewport aspect when absent.
+				if (try yfov && try znear)
 				{
-					self.perspective = { aspectRatio, yfov, zfar, znear };
+					self.perspective = {
+						aspectRatio ?? 0.0f,
+						yfov,
+						zfar ?? 0.0f,
+						znear,
+					};
 				}
 			}
 		}
