@@ -19,6 +19,7 @@ alias Materials = List{Material};
 alias NodeList = List{Node};
 
 const PUNCTUAL_LIGHT_EXTENSION      = "KHR_lights_punctual";
+const NODE_VISIBILITY_EXTENSION     = "KHR_node_visibility";
 const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
 const ANIMATION_POINTER_EXTENSION   = "KHR_animation_pointer";
 const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
@@ -202,6 +203,7 @@ struct Node
 	int joint;
 	int connected_node;
 	bool enable_collision;
+	bool visible;
 
 	uint index;
 
@@ -410,6 +412,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	self.joint = -1;
 	self.motion = -1;
 	self.collider = -1;
+	self.visible = true;
 	self.index = (uint)content.nodes.len();
 
 	self.rotation = { 0, 0, 0, 1 };
@@ -437,6 +440,11 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	@when_extended(json, PUNCTUAL_LIGHT_EXTENSION ; Object* extension)
 	{
 		self.light = extension.get_int("light")!!;
+	};
+
+	@when_extended(json, NODE_VISIBILITY_EXTENSION ; Object* extension)
+	{
+		self.visible = extension.get_bool("visible") ?? true;
 	};
 
 	@when_extended(json, MESH_GPU_INSTANCING_EXTENSION ; Object* extension)
