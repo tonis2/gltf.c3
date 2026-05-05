@@ -1744,25 +1744,6 @@ fn uint Accessor.dataSize(Accessor self)
 // Returns matrix from node transform, scale, rotation
 fn Matrix4f Node.local_matrix(&self) => to_matrix(self.translation, self.scale, self.rotation);
 
-// Standard right-handed quaternion-to-matrix in column-major layout. The C3
-// stdlib's Quaternionf.to_matrix returns the conjugate (transposed) form when
-// the OLD_MATRIX feature flag is off, which silently reverses every animated
-// rotation. Compute it locally to keep this lib independent of that flag.
-fn Matrix4f quat_to_matrix(Quaternionf rotation)
-{
-	Quaternionf q = rotation.normalize();
-	float x = q.i;
-	float y = q.j;
-	float z = q.k;
-	float w = q.l;
-	return (Matrix4f) {
-		1 - 2*y*y - 2*z*z,   2*x*y + 2*z*w,       2*x*z - 2*y*w,       0,  // column 0
-		2*x*y - 2*z*w,       1 - 2*x*x - 2*z*z,   2*y*z + 2*x*w,       0,  // column 1
-		2*x*z + 2*y*w,       2*y*z - 2*x*w,       1 - 2*x*x - 2*y*y,   0,  // column 2
-		0,                   0,                   0,                   1,  // column 3
-	};
-}
-
 fn Matrix4f to_matrix(Vec3 translation, Vec3 scale, Quaternionf rotation)
 {
 	Matrix4f translation_matrix = {
@@ -1774,7 +1755,7 @@ fn Matrix4f to_matrix(Vec3 translation, Vec3 scale, Quaternionf rotation)
 
 	Matrix4f scale_matrix = { scale.x, 0, 0, 0, 0, scale.y, 0, 0, 0, 0, scale.z, 0, 0.0, 0.0, 0.0, 1.0, };
 
-	return translation_matrix * quat_to_matrix(rotation) * scale_matrix;
+	return translation_matrix * rotation.to_matrix() * scale_matrix;
 }
 
 fn Matrix4f Node.global_matrix(self)
