@@ -433,7 +433,10 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	{
 		extras.map.@each(; String key, Object* value)
 		{
-			self.extras.set(key, value.s.copy(mem));
+			if (value.is_string())
+			{
+				self.extras.set(key, value.s.copy(mem));
+			}
 		};
 	}
 
