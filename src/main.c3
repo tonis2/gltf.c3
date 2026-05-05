@@ -1744,6 +1744,38 @@ fn uint Accessor.dataSize(Accessor self)
 // Returns matrix from node transform, scale, rotation
 fn Matrix4f Node.local_matrix(&self) => to_matrix(self.translation, self.scale, self.rotation);
 
+// Spherical linear interpolation between two unit quaternions. Local copy so
+// this lib doesn't depend on the C3 stdlib's Quaternionf.slerp, which has a
+// `cos(dot)` where it should be `acos(dot)` (computes the wrong angle and
+// produces a non-uniform angular-velocity profile within each segment).
+fn Quaternionf slerp(Quaternionf a, Quaternionf b, float t)
+{
+	float[<4>] q1 = a.v;
+	float[<4>] q2 = b.v;
+
+	float cos_half_theta = q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3];
+
+	// Pick the shorter great-circle arc.
+	if (cos_half_theta < 0)
+	{
+		q2 = -q2;
+		cos_half_theta = -cos_half_theta;
+	}
+
+	// Quaternions essentially equal — return a (avoids div by ~0).
+	if (cos_half_theta >= 0.9995f)
+	{
+		float[<4>] r = q1 + (q2 - q1) * t;
+		return (Quaternionf) { .v = r.normalize() };
+	}
+
+	float half_theta = math::acos(cos_half_theta);
+	float sin_half_theta = math::sqrt(1.0f - cos_half_theta * cos_half_theta);
+	float ratio_a = math::sin((1.0f - t) * half_theta) / sin_half_theta;
+	float ratio_b = math::sin(t * half_theta) / sin_half_theta;
+	return (Quaternionf) { .v = q1 * ratio_a + q2 * ratio_b };
+}
+
 fn Matrix4f to_matrix(Vec3 translation, Vec3 scale, Quaternionf rotation)
 {
 	Matrix4f translation_matrix = {

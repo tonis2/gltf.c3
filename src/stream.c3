@@ -645,9 +645,11 @@ macro void GltfStream.@run_animation_channels(
 						case TRANSLATION:
 							new_value.xyz = prev_value.value.xyz.lerp(current_value.xyz, interpolation_value).xyz;
 						case ROTATION:
-							new_value = (Quaternionf) {
-								.v = prev_value.value
-							}.slerp({ .v = current_value }, interpolation_value).v;
+							new_value = slerp(
+								(Quaternionf) { .v = prev_value.value },
+								(Quaternionf) { .v = current_value },
+								interpolation_value
+							).v;
 						case SCALE:
 							new_value.xyz = prev_value.value.xyz.lerp(current_value.xyz, interpolation_value).xyz;
 						default:
