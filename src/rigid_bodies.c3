@@ -7,7 +7,7 @@ import std::math::vector;
 import std::collections::list;
 import std::encoding::json;
 
-enum ShapeType : inline uint
+enum ShapeType
 {
 	BOX,
 	CAPSULE,
@@ -15,25 +15,25 @@ enum ShapeType : inline uint
 	SPHERE,
 }
 
-enum MagFilter : inline uint
+enum MagFilter
 {
 	NEAREST,
 	LINEAR,
 }
 
-enum DriveType : inline uint
+enum DriveType
 {
 	ANGULAR,
 	LINEAR
 }
 
-enum DriveMode : inline uint
+enum DriveMode
 {
 	FORCE,
 	ACCELERATION
 }
 
-enum PhysicsCombine : inline uint
+enum PhysicsCombine
 {
 	AVERAGE,
 	MINIMUM,
@@ -179,7 +179,7 @@ fn Motion Motion.from_json(self, Object* json)
 
 	if (try center_mass)
 	{
-		foreach (usz i, mass : center_mass.array)
+		foreach (sz i, mass : center_mass.array)
 		{
 			self.mass_center[i] = (float)mass.f;
 		}
@@ -187,7 +187,7 @@ fn Motion Motion.from_json(self, Object* json)
 
 	if (try inertia_diagonal)
 	{
-		foreach (usz i, inertia : inertia_diagonal.array)
+		foreach (sz i, inertia : inertia_diagonal.array)
 		{
 			self.inertia_diagonal[i] = (float)inertia.f;
 		}
@@ -195,7 +195,7 @@ fn Motion Motion.from_json(self, Object* json)
 
 	if (try inertia_orientation)
 	{
-		foreach (usz i, inertia : inertia_orientation.array)
+		foreach (sz i, inertia : inertia_orientation.array)
 		{
 			self.inertia_orientation.v[i] = (float)inertia.f;
 		}
@@ -203,7 +203,7 @@ fn Motion Motion.from_json(self, Object* json)
 
 	if (try linear_velocity)
 	{
-		foreach (usz i, velocity : linear_velocity.array)
+		foreach (sz i, velocity : linear_velocity.array)
 		{
 			self.linear_velocity[i] = (float)velocity.f;
 		}
@@ -211,7 +211,7 @@ fn Motion Motion.from_json(self, Object* json)
 
 	if (try angular_velocity)
 	{
-		foreach (usz i, velocity : angular_velocity.array)
+		foreach (sz i, velocity : angular_velocity.array)
 		{
 			self.angular_velocity[i] = (float)velocity.f;
 		}
@@ -596,7 +596,7 @@ fn Aabb Gltf.collider_aabb(&self, uint node_index)
 macro void Gltf.@each_collider_for_body(Gltf self, uint body_node_index; @callback(Collider collider, uint collider_index, Node node, uint node_index))
 {
 	uint[256] stack;
-	usz stack_top = 0;
+	sz stack_top = 0;
 
 	// Check the body node itself
 	Node body_node = self.nodes[body_node_index];
@@ -606,8 +606,8 @@ macro void Gltf.@each_collider_for_body(Gltf self, uint body_node_index; @callba
 	}
 
 	// Push children
-	usz child_count = body_node.children.len();
-	for (usz i = child_count; i > 0; i--)
+	sz child_count = body_node.children.len();
+	for (sz i = child_count; i > 0; i--)
 	{
 		stack[stack_top++] = body_node.children[i - 1];
 	}
@@ -625,8 +625,8 @@ macro void Gltf.@each_collider_for_body(Gltf self, uint body_node_index; @callba
 			@callback(self.colliders[(uint)node.collider], (uint)node.collider, node, node_index);
 		}
 
-		usz cc = node.children.len();
-		for (usz i = cc; i > 0; i--)
+		sz cc = node.children.len();
+		for (sz i = cc; i > 0; i--)
 		{
 			stack[stack_top++] = node.children[i - 1];
 		}

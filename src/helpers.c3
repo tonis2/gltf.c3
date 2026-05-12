@@ -78,16 +78,16 @@ fn List{uint} Gltf.find_skin_animations(Gltf self, uint skin_index, Allocator al
 
 macro bool Animation.equals(self, Animation b) @operator(==) => self.name == b.name;
 
-fn usz Gltf.get_offset(&self, ulong attribute)
+fn sz Gltf.get_offset(&self, ulong attribute)
 {
-	Accessor accessor = self.accessors[(usz)attribute];
+	Accessor accessor = self.accessors[(sz)attribute];
 	BufferView bufferView = self.bufferViews[accessor.view];
 	return accessor.offset + bufferView.offset;
 }
 
 fn BufferView Gltf.get_view(&self, ulong attribute)
 {
-	Accessor accessor = self.accessors[(usz)attribute];
+	Accessor accessor = self.accessors[(sz)attribute];
 	BufferView bufferView = self.bufferViews[accessor.view];
 	return bufferView;
 }
@@ -152,7 +152,7 @@ fn Aabb Aabb.transform(self, Matrix4f mat)
 // Get AABB from a primitive's POSITION accessor min/max
 fn Aabb Gltf.primitive_aabb(&self, Primitive primitive)
 {
-	usz? pos_attr = primitive.attributes.get("POSITION");
+	sz? pos_attr = primitive.attributes.get("POSITION");
 	if (try pos_attr)
 	{
 		Accessor acc = self.accessors[pos_attr];
@@ -263,10 +263,10 @@ macro float @col_len(float a, float b, float c) => (float)math::sqrt((double)(a 
 fn Vec3 Node.world_scale(self)
 {
 	Matrix4f m = self.global_matrix();
-	float sx = @col_len(m.m00, m.m10, m.m20);
-	float sy = @col_len(m.m01, m.m11, m.m21);
-	float sz = @col_len(m.m02, m.m12, m.m22);
-	return { sx, sy, sz };
+	float scl_x = @col_len(m.m00, m.m10, m.m20);
+	float scl_y = @col_len(m.m01, m.m11, m.m21);
+	float scl_z = @col_len(m.m02, m.m12, m.m22);
+	return { scl_x, scl_y, scl_z };
 }
 
 fn Quaternionf Node.world_rotation(self)
@@ -275,9 +275,9 @@ fn Quaternionf Node.world_rotation(self)
 	// Extract rotation by removing scale
 	float sx = @col_len(m.m00, m.m10, m.m20);
 	float sy = @col_len(m.m01, m.m11, m.m21);
-	float sz = @col_len(m.m02, m.m12, m.m22);
+	float szt = @col_len(m.m02, m.m12, m.m22);
 
-	if (sx == 0 || sy == 0 || sz == 0)
+	if (sx == 0 || sy == 0 || szt == 0)
 	{
 		return { .v = { 0, 0, 0, 1 } };
 	}
@@ -285,13 +285,13 @@ fn Quaternionf Node.world_rotation(self)
 	// Normalized rotation matrix columns
 	float r00 = m.m00 / sx;
 	float r01 = m.m01 / sy;
-	float r02 = m.m02 / sz;
+	float r02 = m.m02 / szt;
 	float r10 = m.m10 / sx;
 	float r11 = m.m11 / sy;
-	float r12 = m.m12 / sz;
+	float r12 = m.m12 / szt;
 	float r20 = m.m20 / sx;
 	float r21 = m.m21 / sy;
-	float r22 = m.m22 / sz;
+	float r22 = m.m22 / szt;
 
 	float trace = r00 + r11 + r22;
 	Quaternionf q;
@@ -368,7 +368,7 @@ struct VertexAttribute
 	String name;
 	AccessorType type;
 	DataType data_type;
-	usz offset;
+	sz offset;
 	uint stride;
 	uint count;
 	bool normalized;
@@ -385,7 +385,7 @@ fn VertexLayout Gltf.primitive_layout(&self, Primitive primitive)
 {
 	VertexLayout layout;
 
-	primitive.attributes.@each(; String name, usz accessor_index)
+	primitive.attributes.@each(; String name, sz accessor_index)
 	{
 		if (name != "indices" && layout.attribute_count < 16)
 		{
@@ -435,7 +435,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 		return result;
 	}
 
-	usz? slash1 = pointer.index_of_char_from('/', 1);
+	sz? slash1 = pointer.index_of_char_from('/', 1);
 	if (try slash1)
 	{
 		String first = pointer[1..(slash1 - 1)];
@@ -444,7 +444,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 		{
 			case "nodes":
 				{
-					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					sz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
 					if (try slash2)
 					{
 						result.index = (uint)(pointer[slash1 + 1..(slash2 - 1)].to_uint() ?? 0u);
@@ -468,7 +468,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 				}
 			case "materials":
 				{
-					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					sz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
 					if (try slash2)
 					{
 						result.index = (uint)(pointer[slash1 + 1..(slash2 - 1)].to_uint() ?? 0u);
@@ -506,7 +506,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 				}
 			case "cameras":
 				{
-					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					sz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
 					if (try slash2)
 					{
 						result.index = (uint)(pointer[slash1 + 1..(slash2 - 1)].to_uint() ?? 0u);
@@ -530,7 +530,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 				}
 			case "extensions":
 				{
-					usz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
+					sz? slash2 = pointer.index_of_char_from('/', slash1 + 1);
 					if (try slash2)
 					{
 						String ext_name = pointer[slash1 + 1..(slash2 - 1)];
@@ -539,7 +539,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 						{
 							case "KHR_lights_punctual":
 								{
-									usz? slash3 = pointer.index_of_char_from('/', slash2 + 1);
+									sz? slash3 = pointer.index_of_char_from('/', slash2 + 1);
 									if (try slash3)
 									{
 										String lights_label = pointer[slash2 + 1..(slash3 - 1)];
@@ -548,7 +548,7 @@ fn PointerTarget Gltf.resolve_pointer(Gltf* self, String pointer)
 										{
 											case "lights":
 												{
-													usz? slash4 = pointer.index_of_char_from('/', slash3 + 1);
+													sz? slash4 = pointer.index_of_char_from('/', slash3 + 1);
 													if (try slash4)
 													{
 														result.index = (uint)(pointer[slash3
@@ -606,12 +606,12 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4 value)
 						if (node.weights.len() == 0 && node.mesh >= 0)
 						{
 							Mesh mesh = self.meshes[(uint)node.mesh];
-							for (usz i = 0; i < mesh.weights.len(); i++)
+							for (sz i = 0; i < mesh.weights.len(); i++)
 							{
 								node.weights.push(0.0);
 							}
 						}
-						for (usz i = 0; i < node.weights.len(); i++)
+						for (sz i = 0; i < node.weights.len(); i++)
 						{
 							node.weights[i] = value[i];
 						}
@@ -620,7 +620,7 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4 value)
 					if (target.property.starts_with("weights/"))
 					{
 						uint? idx = target.property[8..].to_uint();
-						if (try idx && (usz)idx < node.weights.len())
+						if (try idx && (sz)idx < node.weights.len())
 						{
 							node.weights[idx] = value[0];
 						}
@@ -728,10 +728,9 @@ fn void Gltf.apply_texture_transform(Gltf* self, PointerTarget target, Vec4 valu
 *>
 macro List.@map(&self, $NewType, #operation)
 {
-	$typefrom(@typeid(fn $NewType (Type t) => ($NewType){})) $func = #operation;
 	List{$NewType} result;
 	result.reserve(self.len());
-	foreach (e : *self) result.push($func(e));
+	foreach (e : *self) result.push(#operation(e));
 	return result;
 }
 
@@ -746,7 +745,6 @@ macro List.@map(&self, $NewType, #operation)
 *>
 macro void List.@push_mapped(&self, src, #operation)
 {
-	$typefrom(@typeid(fn Type ($typeof(src[0]) t) => (Type){})) $func = #operation;
 	self.reserve(src.len());
-	foreach (e : src) self.push($func(e));
+	foreach (e : src) self.push(#operation(e));
 }

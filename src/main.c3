@@ -14,7 +14,7 @@ import std::encoding::base64;
 import std::collections::map;
 
 alias SkinList = List{Skin};
-alias AttributeMap = HashMap{String, usz};
+alias AttributeMap = HashMap{String, sz};
 alias Materials = List{Material};
 alias NodeList = List{Node};
 
@@ -143,8 +143,8 @@ struct ParseResult
 {
 	Gltf gltf;
 	bool is_glb;
-	usz glb_binary_offset;
-	usz glb_binary_length;
+	sz glb_binary_offset;
+	sz glb_binary_length;
 }
 
 struct Gltf
@@ -229,7 +229,7 @@ struct Primitive
 struct Mesh
 {
 	String name;
-	usz scene;
+	sz scene;
 	bool convex_hull;
 	List{Primitive} primitives;
 	List{float} weights;
@@ -328,7 +328,7 @@ struct Camera
 struct Accessor
 {
 	uint view;
-	usz offset;
+	sz offset;
 	uint count;
 	bool normalize;
 	Mode mode;
@@ -341,8 +341,8 @@ struct Accessor
 struct BufferView
 {
 	uint buffer;
-	usz byteLength;
-	usz offset;
+	sz byteLength;
+	sz offset;
 	uint byteStride;
 	Targets target;
 }
@@ -352,7 +352,7 @@ struct Buffer
 	String uri;
 	uint size;
 	ResourceType type;
-	usz source_offset;
+	sz source_offset;
 }
 
 struct Image
@@ -473,7 +473,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 		{
 			self.collider = (int)content.colliders.len();
 			Collider collider_data = (Collider) { }.from_json(collider, allocator: allocator);
-			collider_data.base_node = self.index;
+			collider_data.base_node = (int)self.index;
 
 			if (collider_data.has_shape() == false)
 			{
@@ -488,7 +488,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 		{
 			self.collider = (int)content.colliders.len();
 			Collider trigger_data = (Collider) { }.from_json(trigger, is_trigger: true, allocator: allocator);
-			trigger_data.base_node = self.index;
+			trigger_data.base_node = (int)self.index;
 
 			if (trigger_data.has_shape() == false)
 			{
@@ -593,9 +593,9 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 			Object*? attributes = primitive.get("attributes");
 			Object*? targets = primitive.get("targets");
 
-			uint? indices = primitive.get_int("indices");
-			uint? material = primitive.get_int("material");
-			uint? mode = primitive.get_int("mode");
+			int? indices = primitive.get_int("indices");
+			int? material = primitive.get_int("material");
+			int? mode = primitive.get_int("mode");
 
 			if (try indices) data.attributes["indices"] = indices;
 			if (try material) data.attributes["material"] = material;
@@ -605,7 +605,7 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 			{
 				attributes.map.@each(; String key, Object* val)
 				{
-					data.attributes[key] = (usz)val.f;
+					data.attributes[key] = (sz)val.f;
 				};
 			}
 
@@ -617,7 +617,7 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 					target_attibutes.init(allocator);
 					target.map.@each(; String key, Object* val)
 					{
-						target_attibutes[key] = (usz)val.f;
+						target_attibutes[key] = (sz)val.f;
 					};
 					data.targets.push(target_attibutes);
 				}
@@ -645,16 +645,16 @@ fn void Mesh.free(&self)
 
 fn void BufferView.from_json(&self, Object* json)
 {
-	uint? buffer = json.get_int("buffer");
-	uint? byteLength = json.get_int("byteLength");
-	uint? offset = json.get_int("byteOffset");
-	uint? target = json.get_int("target");
-	uint? stride = json.get_int("byteStride");
+	int? buffer = json.get_int("buffer");
+	int? byteLength = json.get_int("byteLength");
+	int? offset = json.get_int("byteOffset");
+	int? target = json.get_int("target");
+	int? stride = json.get_int("byteStride");
 
-	if (try buffer) self.buffer = buffer;
-	if (try stride) self.byteStride = stride;
-	if (try byteLength) self.byteLength = byteLength;
-	if (try offset) self.offset = offset;
+	if (try buffer) self.buffer = (uint)buffer;
+	if (try stride) self.byteStride = (uint)stride;
+	if (try byteLength) self.byteLength = (uint)byteLength;
+	if (try offset) self.offset = (uint)offset;
 	if (try target)
 	{
 		switch (target)
@@ -673,20 +673,20 @@ fn void BufferView.from_json(&self, Object* json)
 
 fn void Accessor.from_json(&self, Object* json)
 {
-	uint? bufferView = json.get_int("bufferView");
-	uint? count = json.get_int("count");
-	usz? offset = json.get_int("byteOffset");
-	uint? mode = json.get_int("mode");
-	uint? dataType = json.get_int("componentType");
+	int? bufferView = json.get_int("bufferView");
+	int? count = json.get_int("count");
+	sz? offset = json.get_int("byteOffset");
+	int? mode = json.get_int("mode");
+	int? dataType = json.get_int("componentType");
 	String? objectType = json.get_string("type");
 	Object*? normalize = json.get("normalize");
 	Object*? min = json.get("min");
 	Object*? max = json.get("max");
 
-	if (try count) self.count = count;
-	if (try offset) self.offset = offset;
+	if (try count) self.count = (uint)count;
+	if (try offset) self.offset = (uint)offset;
 	if (try normalize) self.normalize = normalize.b;
-	if (try bufferView) self.view = bufferView;
+	if (try bufferView) self.view = (uint)bufferView;
 	if (try mode)
 	{
 		switch (mode)
@@ -766,7 +766,7 @@ fn void? Image.from_json(&self, Object* json)
 	String? mimeType = json.get_string("mimeType");
 	String? uri = json.get_string("uri");
 
-	if (try bufferView) self.view = bufferView;
+	if (try bufferView) self.view = (uint)bufferView;
 	if (try name) self.name = name;
 	if (try mimeType)
 	{
@@ -784,7 +784,7 @@ fn void? Image.from_json(&self, Object* json)
 	if (try uri)
 	{
 		String data_string = (String)uri;
-		usz? offset = data_string.index_of_char(';');
+		sz? offset = data_string.index_of_char(';');
 		self.type = ENCODED_BIN;
 
 		// Detect image type from base64 data URI, but defer decoding
@@ -822,7 +822,7 @@ fn void Image.free(&self)
 
 fn void? Buffer.from_json(&self, Object* json)
 {
-	uint? size = json.get_int("byteLength");
+	int? size = json.get_int("byteLength");
 	String? uri = json.get_string("uri");
 	String? data = json.get_string("data");
 	String? name = json.get_string("name");
@@ -830,7 +830,7 @@ fn void? Buffer.from_json(&self, Object* json)
 
 	if (try size)
 	{
-		self.size = size;
+		self.size = (uint)size;
 	}
 
 	if (try uri)
@@ -1036,10 +1036,10 @@ fn TextureInfo TextureInfo.from_json(&self, Object* data)
 
 fn void Sampler.from_json(&self, Object* json)
 {
-	uint? magFilter = json.get_int("magFilter");
-	uint? minFilter = json.get_int("minFilter");
-	uint? wrapS = json.get_int("wrapS");
-	uint? wrapT = json.get_int("wrapt");
+	int? magFilter = json.get_int("magFilter");
+	int? minFilter = json.get_int("minFilter");
+	int? wrapS = json.get_int("wrapS");
+	int? wrapT = json.get_int("wrapt");
 
 	if (try wrapS)
 	{
@@ -1114,12 +1114,12 @@ fn void Animation.from_json(&self, Object* json, Allocator allocator)
 		{
 			AnimationSampler animation_sampler;
 
-			uint? input = sampler.get_int("input");
-			uint? output = sampler.get_int("output");
+			int? input = sampler.get_int("input");
+			int? output = sampler.get_int("output");
 			String? interpolation = sampler.get_string("interpolation");
 
-			if (try input) animation_sampler.input = input;
-			if (try output) animation_sampler.output = output;
+			if (try input) animation_sampler.input = (uint)input;
+			if (try output) animation_sampler.output = (uint)output;
 			if (try interpolation)
 			{
 				switch (interpolation)
@@ -1141,13 +1141,13 @@ fn void Animation.from_json(&self, Object* json, Allocator allocator)
 		foreach (channel : channels.array)
 		{
 			Channel channel_data;
-			uint? sampler = channel.get_int("sampler");
+			int? sampler = channel.get_int("sampler");
 			Object*? target = channel.get("target");
 
-			if (try sampler) channel_data.sampler = sampler;
+			if (try sampler) channel_data.sampler = (uint)sampler;
 			if (try target)
 			{
-				uint? node = target.get_int("node");
+				int? node = target.get_int("node");
 				String? path = target.get_string("path");
 
 				@when_extended(target, ANIMATION_POINTER_EXTENSION ; Object* extension)
@@ -1156,7 +1156,7 @@ fn void Animation.from_json(&self, Object* json, Allocator allocator)
 					if (try pointer) channel_data.target.pointer = pointer.copy(mem);
 				};
 
-				if (try node) channel_data.target.node = node;
+				if (try node) channel_data.target.node = (uint)node;
 				if (try path)
 				{
 					switch (path)
@@ -1197,12 +1197,12 @@ fn void Skin.from_json(&self, Object* json, Allocator allocator)
 	String? name = json.get_string("name");
 	Object*? joints = json.get("joints");
 
-	uint? skeleton = json.get_int("skeleton");
-	uint? inverseBindMatrices = json.get_int("inverseBindMatrices");
+	int? skeleton = json.get_int("skeleton");
+	int? inverseBindMatrices = json.get_int("inverseBindMatrices");
 
 	if (try name) self.name = name.copy(mem);
-	if (try skeleton) self.skeleton = skeleton;
-	if (try inverseBindMatrices) self.inverseBindAccessor = inverseBindMatrices;
+	if (try skeleton) self.skeleton = (uint)skeleton;
+	if (try inverseBindMatrices) self.inverseBindAccessor = (uint)inverseBindMatrices;
 	if (try joints)
 	{
 		foreach (joint : joints.array) self.joints.push((uint)joint.f);
@@ -1325,9 +1325,12 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 			return UNSUPPORTED_GLTF_VERSION~;
 		}
 
-		stream.seek(20, Seek.SET)!;
-		gltfJson = json::parse(allocator, stream);
-		stream.seek((usz)20 + json_chunk_length, Seek.SET)!;
+		stream.seek(20, SeekOrigin.FROM_START)!;
+		char[] json_buf = alloc::new_array(allocator, char, json_chunk_length);
+		defer alloc::free(allocator, json_buf);
+		stream.read(json_buf)!;
+		gltfJson = json::parse(allocator, (String)json_buf);
+		stream.seek((sz)20 + json_chunk_length, SeekOrigin.FROM_START)!;
 
 		if (catch err = stream.read(&binary_header))
 		{
@@ -1344,13 +1347,17 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 
 		// Record GLB binary chunk layout for deferred loading
 		result.is_glb = true;
-		result.glb_binary_offset = (usz)gltf_size - binary_chunk_length;
+		result.glb_binary_offset = (sz)gltf_size - binary_chunk_length;
 		result.glb_binary_length = binary_chunk_length;
 	}
 	else
 	{
-		stream.seek(0, Seek.SET)!;
-		gltfJson = json::parse(allocator, stream);
+		sz total_size = (sz)stream.size()!;
+		stream.seek(0, SeekOrigin.FROM_START)!;
+		char[] json_buf = alloc::new_array(allocator, char, total_size);
+		defer alloc::free(allocator, json_buf);
+		stream.read(json_buf)!;
+		gltfJson = json::parse(allocator, (String)json_buf);
 	}
 
 	if (catch err = gltfJson)
@@ -1727,17 +1734,17 @@ fn uint Accessor.dataSize(Accessor self)
 	switch (self.data_type)
 	{
 		case DataType.ICHAR:
-			return ichar.sizeof;
+			return ichar::size;
 		case DataType.CHAR:
-			return char.sizeof;
+			return char::size;
 		case DataType.SHORT:
-			return short.sizeof;
+			return short::size;
 		case DataType.USHORT:
-			return ushort.sizeof;
+			return ushort::size;
 		case DataType.UINT:
-			return uint.sizeof;
+			return uint::size;
 		case DataType.FLOAT:
-			return float.sizeof;
+			return float::size;
 	}
 }
 
@@ -1804,9 +1811,9 @@ fn Matrix4f Node.global_matrix(self)
 	return global_matrix;
 }
 
-fn char[]? parse_base64(char[] data, usz size) @private
+fn char[]? parse_base64(char[] data, sz size) @private
 {
-	usz offset = ((String)data).index_of_char(';')! + 8;
+	sz offset = ((String)data).index_of_char(';')! + 8;
 	char[]? buffer_data = base64::decode(mem, data[offset..]);
 
 	if (catch err = buffer_data)

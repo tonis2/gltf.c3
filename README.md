@@ -75,22 +75,22 @@ stream.load_all_buffers()!;
 foreach (mesh : stream.gltf.meshes) {
     foreach (primitive : mesh.primitives) {
         // Iterate positions
-        stream.@each_position(primitive; Vec3 pos, usz i) {
+        stream.@each_position(primitive; Vec3 pos, sz i) {
             // use pos...
         };
 
         // Iterate normals
-        stream.@each_normal(primitive; Vec3 normal, usz i) {
+        stream.@each_normal(primitive; Vec3 normal, sz i) {
             // use normal...
         };
 
         // Iterate UVs
-        stream.@each_texcoord(primitive, 0; Vec2 uv, usz i) {
+        stream.@each_texcoord(primitive, 0; Vec2 uv, sz i) {
             // use uv...
         };
 
         // Iterate indices
-        stream.@each_index_as_ushort(primitive; ushort idx, usz i) {
+        stream.@each_index_as_ushort(primitive; ushort idx, sz i) {
             // use idx...
         };
     }

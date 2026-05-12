@@ -24,7 +24,7 @@ struct BufferSlot
 	LoadState state;
 	uint ref_count;
 	char* ptr;
-	usz len;
+	sz len;
 	void* mmap_handle; // Opaque handle for cleanup (FileMmap* on POSIX)
 	char[] data; // Only used when state == HEAP
 }
@@ -42,8 +42,8 @@ struct GltfStream
 	String source_path;
 	String source_dir;
 	bool is_glb;
-	usz glb_binary_offset;
-	usz glb_binary_length;
+	sz glb_binary_offset;
+	sz glb_binary_length;
 	BufferSlot[] buffer_slots;
 	ImageSlot[] image_slots;
 	Allocator allocator;
@@ -72,7 +72,7 @@ fn GltfStream? open(String path, Allocator allocator = mem)
 	// Store path and compute source directory
 	stream.source_path = path.copy(allocator);
 
-	usz sep_pos = path.rindex_of_char('/') ?? path.rindex_of_char('\\') ?? 0;
+	sz sep_pos = path.rindex_of_char('/') ?? path.rindex_of_char('\\') ?? 0;
 	if (sep_pos > 0)
 	{
 		stream.source_dir = path[..sep_pos].copy(allocator);
@@ -83,14 +83,14 @@ fn GltfStream? open(String path, Allocator allocator = mem)
 	}
 
 	// Initialize buffer slots
-	usz num_buffers = stream.gltf.buffers.len();
+	sz num_buffers = stream.gltf.buffers.len();
 	if (num_buffers > 0)
 	{
 		stream.buffer_slots = alloc::new_array(allocator, BufferSlot, num_buffers);
 	}
 
 	// Initialize image slots
-	usz num_images = stream.gltf.images.len();
+	sz num_images = stream.gltf.images.len();
 	if (num_images > 0)
 	{
 		stream.image_slots = alloc::new_array(allocator, ImageSlot, num_images);
@@ -136,7 +136,7 @@ fn void? GltfStream.load_buffer(&self, uint index)
 	{
 		case ENCODED_BIN:
 			// GLB embedded binary -- mmap or read the binary chunk
-			usz file_offset = self.glb_binary_offset + buffer.source_offset;
+			sz file_offset = self.glb_binary_offset + buffer.source_offset;
 			$if env::LIBC &&& env::POSIX:
 				file::mmap::FileMmap* mm = alloc::new(self.allocator, file::mmap::FileMmap);
 				*mm = file::mmap_open(self.source_path, "r", file_offset, buffer.size)!;
@@ -149,7 +149,7 @@ fn void? GltfStream.load_buffer(&self, uint index)
 				File file = file::open(self.source_path, "r")!;
 				defer file.close()!!;
 				slot.data = alloc::new_array(self.allocator, char, buffer.size);
-				file.seek(file_offset, Seek.SET)!;
+				file.seek(file_offset, SeekOrigin.FROM_START)!;
 				file.read(slot.data)!;
 				slot.ptr = slot.data.ptr;
 				slot.len = buffer.size;
@@ -279,7 +279,7 @@ fn void? GltfStream.load_mesh_buffers(&self, uint mesh_index)
 
 	foreach (primitive : mesh.primitives)
 	{
-		primitive.attributes.@each(; String attr_name, usz accessor_index)
+		primitive.attributes.@each(; String attr_name, sz accessor_index)
 		{
 			Accessor accessor = self.gltf.accessors[accessor_index];
 			BufferView view = self.gltf.bufferViews[accessor.view];
@@ -337,7 +337,7 @@ fn void? GltfStream.load_image(&self, uint index)
 			// Image data is in a buffer view
 			if (image.view >= 0)
 			{
-				BufferView view = self.gltf.bufferViews[(usz)image.view];
+				BufferView view = self.gltf.bufferViews[(sz)image.view];
 				// Ensure the underlying buffer is loaded
 				self.load_buffer(view.buffer)!;
 
@@ -351,8 +351,8 @@ fn void? GltfStream.load_image(&self, uint index)
 			String img_path = string::tformat("%s/%s", self.source_dir, (String)image.uri);
 			File file = file::open(img_path, "r")!;
 			defer file.close()!!;
-			usz file_size = file.seek(0, Seek.END)!;
-			file.seek(0, Seek.SET)!;
+			sz file_size = (sz)file.size()!;
+			file.seek(0, SeekOrigin.FROM_START)!;
 			slot.data = alloc::new_array(self.allocator, char, file_size);
 			file.read(slot.data)!;
 	}
@@ -489,7 +489,7 @@ fn void GltfStream.unload_node_recursive(&self, uint node_index)
 		Mesh mesh = self.gltf.meshes[(uint)node.mesh];
 		foreach (primitive : mesh.primitives)
 		{
-			primitive.attributes.@each(; String attr_name, usz accessor_index)
+			primitive.attributes.@each(; String attr_name, sz accessor_index)
 			{
 				Accessor accessor = self.gltf.accessors[accessor_index];
 				BufferView view = self.gltf.bufferViews[accessor.view];
@@ -562,10 +562,10 @@ fn char[]? GltfStream.get_image_data(&self, uint index)
 	return slot.data;
 }
 
-macro GltfStream.@cast_buffer(&self, #target, usz index, #type)
+macro GltfStream.@cast_buffer(&self, #target, sz index, $Type)
 {
 	Accessor accessor;
-	$if $typeof(#target).nameof == "Accessor":
+	$if $Typeof(#target)::name == "Accessor":
 		{
 			accessor = #target;
 		}
@@ -576,19 +576,19 @@ macro GltfStream.@cast_buffer(&self, #target, usz index, #type)
 	$endif
 
 	BufferView bufferView = self.gltf.bufferViews[accessor.view];
-	usz index_offset = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
-	usz start_offset = accessor.offset + bufferView.offset;
+	sz index_offset = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
+	sz start_offset = accessor.offset + bufferView.offset;
 
 	BufferSlot* slot = &self.buffer_slots[bufferView.buffer];
 	char* data_ptr = slot.ptr + start_offset + (index * index_offset);
-	return bitcast(*(char[#type.sizeof]*)data_ptr, #type);
+	return bitcast(*(char[$Type::size]*)data_ptr, $Type);
 }
 
 fn void* GltfStream.get_data_array(&self, Accessor accessor)
 {
 	BufferView bufferView = self.gltf.bufferViews[accessor.view];
 	BufferSlot* slot = &self.buffer_slots[bufferView.buffer];
-	usz start_offset = accessor.offset + bufferView.offset;
+	sz start_offset = accessor.offset + bufferView.offset;
 	return slot.ptr[start_offset..(start_offset + bufferView.byteLength)];
 }
 
@@ -790,7 +790,7 @@ macro void GltfStream.@build_skin_matrixes(&self, gltf::Skin skin; @callback(uin
 	}
 }
 
-macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, #type; @callback(position, index))
+macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, $Type; @callback(position, index))
 {
 	List{Vec3} positions;
 	List{ushort} indices;
@@ -808,25 +808,25 @@ macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, #type; @callb
 		Accessor index_accessor = self.gltf.accessors[primitive.attributes["indices"]!!];
 		Accessor pos_accessor = self.gltf.accessors[primitive.attributes["POSITION"]!!];
 
-		for (usz i = 0; i < pos_accessor.count; i++)
+		for (sz i = 0; i < pos_accessor.count; i++)
 		{
 			Vec3 position = self.@cast_buffer(pos_accessor, i, Vec3);
 			positions.push(position);
 		}
 
-		for (usz i = 0; i < index_accessor.count; i++)
+		for (sz i = 0; i < index_accessor.count; i++)
 		{
 			ushort index = self.@cast_buffer(index_accessor, i, ushort);
 			indices.push(index);
 		}
 
-		$if #type.kindof == ARRAY:
-			for (usz i = 0; i < indices.len(); i += #type.len)
+		$if $Type::kind == ARRAY:
+			for (sz i = 0; i < indices.len(); i += $Type::len)
 			{
-				$typefrom(#type.typeid) value;
-				for (usz j = 0; j < #type.len; j++)
+				$Type value;
+				for (sz j = 0; j < $Type::len; j++)
 				{
-					usz index = indices[i + j];
+					sz index = indices[i + j];
 					value[j] = positions[index];
 				}
 				@callback(value, indices);
@@ -844,21 +844,21 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 	for (uint i = 0; i < accessor.count; i += 1)
 	{
 		BufferSlot* slot = &self.buffer_slots[bufferView.buffer];
-		char* data = slot.ptr + (accessor.offset + bufferView.offset + (usz)(i * accessor.stride()));
+		char* data = slot.ptr + (accessor.offset + bufferView.offset + (sz)(i * accessor.stride()));
 
 		switch (accessor.type)
 		{
 			case AccessorType.SCALAR:
-				ushort value = bitcast(*(char[ushort.sizeof]*)data, ushort);
+				ushort value = bitcast(*(char[ushort::size]*)data, ushort);
 				io::printfn("Parsed scalar %d", value);
 			case AccessorType.VEC2:
-				Vec2 vec = bitcast(*(char[Vec2.sizeof]*)data, Vec2);
+				Vec2 vec = bitcast(*(char[Vec2::size]*)data, Vec2);
 				io::printfn("Parsed Vec2 %f %f", vec.x, vec.y);
 			case AccessorType.VEC3:
-				Vec3 vec = bitcast(*(char[Vec3.sizeof]*)data, Vec3);
+				Vec3 vec = bitcast(*(char[Vec3::size]*)data, Vec3);
 				io::printfn("Parsed Vec3 %f %f %f", vec.x, vec.y, vec.z);
 			case AccessorType.VEC4:
-				Vec4 vec = bitcast(*(char[Vec4.sizeof]*)data, Vec4);
+				Vec4 vec = bitcast(*(char[Vec4::size]*)data, Vec4);
 				io::printfn("Parsed Vec4 %f %f %f %f", vec.x, vec.y, vec.z, vec.w);
 			default:
 				{
@@ -871,121 +871,121 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 
 // --- Vertex attribute extraction macros ---
 
-macro void GltfStream.@each_position(&self, Primitive primitive; @callback(Vec3 position, usz index))
+macro void GltfStream.@each_position(&self, Primitive primitive; @callback(Vec3 position, sz index))
 {
-	usz? attr = primitive.attributes.get("POSITION");
+	sz? attr = primitive.attributes.get("POSITION");
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, Vec3), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_normal(&self, Primitive primitive; @callback(Vec3 normal, usz index))
+macro void GltfStream.@each_normal(&self, Primitive primitive; @callback(Vec3 normal, sz index))
 {
-	usz? attr = primitive.attributes.get("NORMAL");
+	sz? attr = primitive.attributes.get("NORMAL");
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, Vec3), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4 tangent, usz index))
+macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4 tangent, sz index))
 {
-	usz? attr = primitive.attributes.get("TANGENT");
+	sz? attr = primitive.attributes.get("TANGENT");
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, Vec4), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @callback(Vec2 uv, usz index))
+macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @callback(Vec2 uv, sz index))
 {
 	String attr_name = string::tformat("TEXCOORD_%d", set);
-	usz? attr = primitive.attributes.get(attr_name);
+	sz? attr = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, Vec2), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callback(Vec4 color, usz index))
+macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callback(Vec4 color, sz index))
 {
 	String attr_name = string::tformat("COLOR_%d", set);
-	usz? attr = primitive.attributes.get(attr_name);
+	sz? attr = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, Vec4), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callback(ushort[<4>] joints, usz index))
+macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callback(ushort[<4>] joints, sz index))
 {
 	String attr_name = string::tformat("JOINTS_%d", set);
-	usz? attr = primitive.attributes.get(attr_name);
+	sz? attr = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, ushort[<4>]), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callback(Vec4 weights, usz index))
+macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callback(Vec4 weights, sz index))
 {
 	String attr_name = string::tformat("WEIGHTS_%d", set);
-	usz? attr = primitive.attributes.get(attr_name);
+	sz? attr = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, Vec4), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_index_as_ushort(&self, Primitive primitive; @callback(ushort index_val, usz index))
+macro void GltfStream.@each_index_as_ushort(&self, Primitive primitive; @callback(ushort index_val, sz index))
 {
-	usz? attr = primitive.attributes.get("indices");
+	sz? attr = primitive.attributes.get("indices");
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, ushort), i);
 		}
 	}
 }
 
-macro void GltfStream.@each_index_as_uint(&self, Primitive primitive; @callback(uint index_val, usz index))
+macro void GltfStream.@each_index_as_uint(&self, Primitive primitive; @callback(uint index_val, sz index))
 {
-	usz? attr = primitive.attributes.get("indices");
+	sz? attr = primitive.attributes.get("indices");
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
-		for (usz i = 0; i < accessor.count; i++)
+		for (sz i = 0; i < accessor.count; i++)
 		{
 			@callback(self.@cast_buffer(accessor, i, uint), i);
 		}
@@ -999,10 +999,10 @@ macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Nod
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
-	usz stack_top = 0;
+	sz stack_top = 0;
 
-	usz root_count = scene.nodes.len();
-	for (usz i = root_count; i > 0; i--)
+	sz root_count = scene.nodes.len();
+	for (sz i = root_count; i > 0; i--)
 	{
 		stack[stack_top++] = scene.nodes[i - 1];
 	}
@@ -1013,8 +1013,8 @@ macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Nod
 		Node node = self.gltf.nodes[node_index];
 		@callback(node, node_index);
 
-		usz child_count = node.children.len();
-		for (usz i = child_count; i > 0; i--)
+		sz child_count = node.children.len();
+		for (sz i = child_count; i > 0; i--)
 		{
 			stack[stack_top++] = node.children[i - 1];
 		}
@@ -1028,10 +1028,10 @@ macro void GltfStream.@each_mesh_in_scene(
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
-	usz stack_top = 0;
+	sz stack_top = 0;
 
-	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--)
+	sz root_count = scene.nodes.len();
+	for (sz ri = root_count; ri > 0; ri--)
 	{
 		stack[stack_top++] = scene.nodes[ri - 1];
 	}
@@ -1044,8 +1044,8 @@ macro void GltfStream.@each_mesh_in_scene(
 		{
 			@callback(self.gltf.meshes[(uint)node.mesh], (uint)node.mesh, node, node_index);
 		}
-		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--)
+		sz child_count = node.children.len();
+		for (sz ci = child_count; ci > 0; ci--)
 		{
 			stack[stack_top++] = node.children[ci - 1];
 		}
@@ -1056,10 +1056,10 @@ macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Li
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
-	usz stack_top = 0;
+	sz stack_top = 0;
 
-	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--)
+	sz root_count = scene.nodes.len();
+	for (sz ri = root_count; ri > 0; ri--)
 	{
 		stack[stack_top++] = scene.nodes[ri - 1];
 	}
@@ -1072,8 +1072,8 @@ macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Li
 		{
 			@callback(self.gltf.lights[node.light], (uint)node.light, node);
 		}
-		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--)
+		sz child_count = node.children.len();
+		for (sz ci = child_count; ci > 0; ci--)
 		{
 			stack[stack_top++] = node.children[ci - 1];
 		}
@@ -1087,10 +1087,10 @@ macro void GltfStream.@each_camera_in_scene(
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
-	usz stack_top = 0;
+	sz stack_top = 0;
 
-	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--)
+	sz root_count = scene.nodes.len();
+	for (sz ri = root_count; ri > 0; ri--)
 	{
 		stack[stack_top++] = scene.nodes[ri - 1];
 	}
@@ -1103,8 +1103,8 @@ macro void GltfStream.@each_camera_in_scene(
 		{
 			@callback(self.gltf.cameras[node.camera], (uint)node.camera, node);
 		}
-		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--)
+		sz child_count = node.children.len();
+		for (sz ci = child_count; ci > 0; ci--)
 		{
 			stack[stack_top++] = node.children[ci - 1];
 		}
@@ -1118,10 +1118,10 @@ macro void GltfStream.@each_collider_in_scene(
 {
 	Scene scene = self.gltf.scenes[scene_index];
 	uint[256] stack;
-	usz stack_top = 0;
+	sz stack_top = 0;
 
-	usz root_count = scene.nodes.len();
-	for (usz ri = root_count; ri > 0; ri--)
+	sz root_count = scene.nodes.len();
+	for (sz ri = root_count; ri > 0; ri--)
 	{
 		stack[stack_top++] = scene.nodes[ri - 1];
 	}
@@ -1134,8 +1134,8 @@ macro void GltfStream.@each_collider_in_scene(
 		{
 			@callback(self.gltf.colliders[(uint)node.collider], (uint)node.collider, node, node_index);
 		}
-		usz child_count = node.children.len();
-		for (usz ci = child_count; ci > 0; ci--)
+		sz child_count = node.children.len();
+		for (sz ci = child_count; ci > 0; ci--)
 		{
 			stack[stack_top++] = node.children[ci - 1];
 		}
@@ -1147,17 +1147,17 @@ macro void GltfStream.@each_collider_in_scene(
 macro void? GltfStream.@each_morph_position(
 	&self,
 	Primitive primitive,
-	uint target_index; @callback(Vec3 delta, usz index)
+	uint target_index; @callback(Vec3 delta, sz index)
 )
 {
 	if (target_index < primitive.targets.len())
 	{
 		AttributeMap target = primitive.targets[target_index];
-		usz? attr = target.get("POSITION");
+		sz? attr = target.get("POSITION");
 		if (try attr)
 		{
 			Accessor accessor = self.gltf.accessors[attr];
-			for (usz i = 0; i < accessor.count; i++)
+			for (sz i = 0; i < accessor.count; i++)
 			{
 				@callback(self.@cast_buffer(accessor, i, Vec3), i);
 			}
@@ -1168,17 +1168,17 @@ macro void? GltfStream.@each_morph_position(
 macro void? GltfStream.@each_morph_normal(
 	&self,
 	Primitive primitive,
-	uint target_index; @callback(Vec3 delta, usz index)
+	uint target_index; @callback(Vec3 delta, sz index)
 )
 {
 	if (target_index < primitive.targets.len())
 	{
 		AttributeMap target = primitive.targets[target_index];
-		usz? attr = target.get("NORMAL");
+		sz? attr = target.get("NORMAL");
 		if (try attr)
 		{
 			Accessor accessor = self.gltf.accessors[attr];
-			for (usz i = 0; i < accessor.count; i++)
+			for (sz i = 0; i < accessor.count; i++)
 			{
 				@callback(self.@cast_buffer(accessor, i, Vec3), i);
 			}

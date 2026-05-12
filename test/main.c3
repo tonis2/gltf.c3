@@ -141,7 +141,7 @@ fn void test_load_scene() {
     // All meshes should be accessible
     foreach (mesh : stream.gltf.meshes) {
         foreach (prim : mesh.primitives) {
-            usz? pos_attr = prim.attributes.get("POSITION");
+            sz? pos_attr = prim.attributes.get("POSITION");
             if (try pos_attr) {
                 Accessor acc = stream.gltf.accessors[pos_attr];
                 Vec3 v = stream.@cast_buffer(acc, 0, Vec3);
@@ -324,7 +324,7 @@ fn void test_each_position() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_position(wheels.primitives[0]; Vec3 pos, usz i) {
+    stream.@each_position(wheels.primitives[0]; Vec3 pos, sz i) {
         count++;
     };
     assert(count > 0);
@@ -337,7 +337,7 @@ fn void test_each_normal() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_normal(wheels.primitives[0]; Vec3 normal, usz i) {
+    stream.@each_normal(wheels.primitives[0]; Vec3 normal, sz i) {
         count++;
     };
     assert(count > 0);
@@ -350,7 +350,7 @@ fn void test_each_texcoord() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_texcoord(wheels.primitives[0], 0; Vec2 uv, usz i) {
+    stream.@each_texcoord(wheels.primitives[0], 0; Vec2 uv, sz i) {
         count++;
     };
     assert(count > 0);
@@ -363,7 +363,7 @@ fn void test_each_index() {
 
     uint count = 0;
     Mesh wheels = stream.gltf.meshes[0];
-    stream.@each_index_as_ushort(wheels.primitives[0]; ushort idx, usz i) {
+    stream.@each_index_as_ushort(wheels.primitives[0]; ushort idx, sz i) {
         count++;
     };
     assert(count > 0);
