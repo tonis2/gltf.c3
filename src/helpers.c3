@@ -600,7 +600,14 @@ fn void Gltf.apply_pointer_value(Gltf* self, PointerTarget target, Vec4 value)
 			{
 				case "translation": node.translation = value.xyz;
 				case "rotation": node.rotation = { .v = value };
-				case "scale": node.scale = value.xyz;
+				case "scale":
+					// Save+restore translation around scale write. C3 0.8's
+					// Vec3 (float[<3>]) SIMD store writes 16 bytes; on Node's
+					// scale-followed-by-translation layout the 4th-lane zero
+					// spills into translation.x.
+					Vec3 saved_t = node.translation;
+					node.scale = value.xyz;
+					node.translation = saved_t;
 				case "weights":
 					{
 						if (node.weights.len() == 0 && node.mesh >= 0)
