@@ -617,7 +617,7 @@ macro void GltfStream.@run_animation_channels(
 		float max_frame_time = time_accessor.max[0];
 		float min_frame_time = time_accessor.min[0];
 
-		for TIMES: (ulong j; j < time_accessor.count; j++)
+		for TIMES: (sz j; j < time_accessor.count; j++)
 		{
 			float current_time = self.@cast_buffer(time_accessor, j, float);
 
@@ -722,7 +722,7 @@ macro void GltfStream.@run_pointer_channels(
 		float max_frame_time = time_accessor.max[0];
 		float min_frame_time = time_accessor.min[0];
 
-		for TIMES: (ulong j; j < time_accessor.count; j++)
+		for TIMES: (sz j; j < time_accessor.count; j++)
 		{
 			float current_time = self.@cast_buffer(time_accessor, j, float);
 
