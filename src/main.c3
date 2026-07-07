@@ -907,8 +907,11 @@ fn void? Material.from_json(&self, Object* json, Gltf data)
 	self.baseColorFactor = { 1.0, 1.0, 1.0, 1.0 };
 	self.emissiveFactor = { 0.0, 0.0, 0.0, 1.0 };
 
-	self.roughnessFactor = 0;
-	self.metallicFactor = 0;
+	// glTF spec defaults for metallic/roughness are 1.0 (used when the
+	// material omits the factor, which a tool does when a texture drives the
+	// channel — omission means "multiply by 1", not "zero out").
+	self.roughnessFactor = 1.0;
+	self.metallicFactor = 1.0;
 	self.emissiveStrength = 1.0;
 	self.occlusionTexture = self.occlusionTexture.from_json(occlusionTexture) ?? default_texture;
 	self.normalTexture = self.normalTexture.from_json(normalTexture) ?? default_texture;
@@ -954,9 +957,15 @@ fn void? Material.from_json(&self, Object* json, Gltf data)
 			metallicRoughnessTexture
 		) ?? default_texture;
 
-		if (try metallicFactor && try roughnessFactor)
+		// Apply each factor independently — a material may specify one and omit
+		// the other (e.g. metallicFactor:0 with roughnessFactor left at the 1.0
+		// default when a roughness texture drives the channel).
+		if (try metallicFactor)
 		{
 			self.metallicFactor = (float)metallicFactor;
+		}
+		if (try roughnessFactor)
+		{
 			self.roughnessFactor = (float)roughnessFactor;
 		}
 
