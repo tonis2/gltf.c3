@@ -81,6 +81,12 @@ enum LightType : uint
 	SPOT,
 }
 
+enum CameraType : uint
+{
+	PERSPECTIVE,
+	ORTHOGRAPHIC,
+}
+
 enum ResourceType
 {
 	ENCODED_BIN,
@@ -313,12 +319,20 @@ struct Sampler
 struct Camera
 {
 	String name;
+	CameraType type;
 	union
 	{
 		struct perspective
 		{
 			float aspectRatio;
 			float yfov;
+			float zfar;
+			float znear;
+		}
+		struct orthographic
+		{
+			float xmag;
+			float ymag;
 			float zfar;
 			float znear;
 		}
@@ -528,7 +542,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	{
 		self.scale = { (float)scale.get_at(0).f, (float)scale.get_at(1).f, (float)scale.get_at(2).f };
 		assert (self.scale.x > 0 && self.scale.y > 0
-			&& self.scale.z > 0 , "Don't use negative scale value, it can break stuff at %s" , self.scale);
+			&& self.scale.z > 0 , "Don't use negative scale value, it can break stuff at %s %s" , self.scale, self.name);
 	}
 
 	if (try translation)
@@ -862,6 +876,7 @@ fn void Camera.from_json(&self, Object* json)
 	{
 		if (cameraType == "perspective")
 		{
+			self.type = PERSPECTIVE;
 			Object*? perspective = json.get("perspective");
 			if (try perspective)
 			{
@@ -879,6 +894,23 @@ fn void Camera.from_json(&self, Object* json)
 						zfar ?? 0.0f,
 						znear,
 					};
+				}
+			}
+		}
+		if (cameraType == "orthographic")
+		{
+			self.type = ORTHOGRAPHIC;
+			Object*? orthographic = json.get("orthographic");
+			if (try orthographic)
+			{
+				float? xmag = (float)orthographic.get_float("xmag");
+				float? ymag = (float)orthographic.get_float("ymag");
+				float? zfar = (float)orthographic.get_float("zfar");
+				float? znear = (float)orthographic.get_float("znear");
+
+				if (try xmag && try ymag && try zfar && try znear)
+				{
+					self.orthographic = { xmag, ymag, zfar, znear };
 				}
 			}
 		}

@@ -998,7 +998,12 @@ macro void GltfStream.@each_index_as_uint(&self, Primitive primitive; @callback(
 macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Node node, uint node_index))
 {
 	Scene scene = self.gltf.scenes[scene_index];
-	uint[256] stack;
+	sz node_count = self.gltf.nodes.len();
+	if (node_count == 0) return;
+
+	// A node has at most one parent, so the stack never holds more than every node once.
+	uint[] stack = alloc::new_array(self.allocator, uint, node_count);
+	defer alloc::free(self.allocator, stack);
 	sz stack_top = 0;
 
 	sz root_count = scene.nodes.len();
@@ -1026,58 +1031,24 @@ macro void GltfStream.@each_mesh_in_scene(
 	uint scene_index; @callback(Mesh mesh, uint mesh_index, Node node, uint node_index)
 )
 {
-	Scene scene = self.gltf.scenes[scene_index];
-	uint[256] stack;
-	sz stack_top = 0;
-
-	sz root_count = scene.nodes.len();
-	for (sz ri = root_count; ri > 0; ri--)
+	self.@each_node_in_scene(scene_index; Node node, uint node_index)
 	{
-		stack[stack_top++] = scene.nodes[ri - 1];
-	}
-
-	while (stack_top > 0)
-	{
-		uint node_index = stack[--stack_top];
-		Node node = self.gltf.nodes[node_index];
 		if (node.mesh >= 0)
 		{
 			@callback(self.gltf.meshes[(uint)node.mesh], (uint)node.mesh, node, node_index);
 		}
-		sz child_count = node.children.len();
-		for (sz ci = child_count; ci > 0; ci--)
-		{
-			stack[stack_top++] = node.children[ci - 1];
-		}
-	}
+	};
 }
 
 macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Light light, uint light_index, Node node))
 {
-	Scene scene = self.gltf.scenes[scene_index];
-	uint[256] stack;
-	sz stack_top = 0;
-
-	sz root_count = scene.nodes.len();
-	for (sz ri = root_count; ri > 0; ri--)
+	self.@each_node_in_scene(scene_index; Node node, uint node_index)
 	{
-		stack[stack_top++] = scene.nodes[ri - 1];
-	}
-
-	while (stack_top > 0)
-	{
-		uint node_index = stack[--stack_top];
-		Node node = self.gltf.nodes[node_index];
 		if (node.has_light())
 		{
 			@callback(self.gltf.lights[node.light], (uint)node.light, node);
 		}
-		sz child_count = node.children.len();
-		for (sz ci = child_count; ci > 0; ci--)
-		{
-			stack[stack_top++] = node.children[ci - 1];
-		}
-	}
+	};
 }
 
 macro void GltfStream.@each_camera_in_scene(
@@ -1085,30 +1056,13 @@ macro void GltfStream.@each_camera_in_scene(
 	uint scene_index; @callback(Camera camera, uint camera_index, Node node)
 )
 {
-	Scene scene = self.gltf.scenes[scene_index];
-	uint[256] stack;
-	sz stack_top = 0;
-
-	sz root_count = scene.nodes.len();
-	for (sz ri = root_count; ri > 0; ri--)
+	self.@each_node_in_scene(scene_index; Node node, uint node_index)
 	{
-		stack[stack_top++] = scene.nodes[ri - 1];
-	}
-
-	while (stack_top > 0)
-	{
-		uint node_index = stack[--stack_top];
-		Node node = self.gltf.nodes[node_index];
 		if (node.has_camera())
 		{
 			@callback(self.gltf.cameras[node.camera], (uint)node.camera, node);
 		}
-		sz child_count = node.children.len();
-		for (sz ci = child_count; ci > 0; ci--)
-		{
-			stack[stack_top++] = node.children[ci - 1];
-		}
-	}
+	};
 }
 
 macro void GltfStream.@each_collider_in_scene(
@@ -1116,30 +1070,13 @@ macro void GltfStream.@each_collider_in_scene(
 	uint scene_index; @callback(Collider collider, uint collider_index, Node node, uint node_index)
 )
 {
-	Scene scene = self.gltf.scenes[scene_index];
-	uint[256] stack;
-	sz stack_top = 0;
-
-	sz root_count = scene.nodes.len();
-	for (sz ri = root_count; ri > 0; ri--)
+	self.@each_node_in_scene(scene_index; Node node, uint node_index)
 	{
-		stack[stack_top++] = scene.nodes[ri - 1];
-	}
-
-	while (stack_top > 0)
-	{
-		uint node_index = stack[--stack_top];
-		Node node = self.gltf.nodes[node_index];
 		if (node.has_collider())
 		{
 			@callback(self.gltf.colliders[(uint)node.collider], (uint)node.collider, node, node_index);
 		}
-		sz child_count = node.children.len();
-		for (sz ci = child_count; ci > 0; ci--)
-		{
-			stack[stack_top++] = node.children[ci - 1];
-		}
-	}
+	};
 }
 
 // --- Morph target helpers ---
