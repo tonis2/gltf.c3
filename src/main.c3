@@ -300,6 +300,9 @@ struct Material
 	TextureInfo emissiveTexture;
 	TextureInfo baseColorTexture;
 	TextureInfo metallicRoughnessTexture;
+
+	// CUSTOM_materials_layers extension — see materials_layers.c3.
+	MaterialLayers layers_ext;
 }
 
 struct Texture
@@ -1592,6 +1595,8 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 		{
 			Material material;
 			material.from_json(json, *content)!;
+			// CUSTOM_materials_layers extension — see materials_layers.c3.
+			material.layers_ext.from_json(json, content, allocator);
 			content.materials.push(material);
 		}
 	}
@@ -1690,6 +1695,9 @@ fn void Gltf.free(Gltf* self)
 	foreach (joint : self.physics_joints) joint.free();
 	foreach (filter : self.collision_filters) filter.free();
 	foreach (image : self.images) image.free();
+
+	// CUSTOM_materials_layers extension — see materials_layers.c3.
+	foreach (material : self.materials) material.layers_ext.free();
 
 	foreach (collider : self.colliders) collider.free();
 	self.colliders.free();
