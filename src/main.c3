@@ -21,6 +21,7 @@ alias NodeList = List{Node};
 const PUNCTUAL_LIGHT_EXTENSION      = "KHR_lights_punctual";
 const NODE_VISIBILITY_EXTENSION     = "KHR_node_visibility";
 const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
+const TEXTURE_BASISU_EXTENSION      = "KHR_texture_basisu";
 const ANIMATION_POINTER_EXTENSION   = "KHR_animation_pointer";
 const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
 const IMPLICIT_SHAPES_EXTENSION     = "KHR_implicit_shapes";
@@ -38,6 +39,8 @@ enum ImageType
 	IMAGE_PNG,
 	IMAGE_BMP,
 	IMAGE_GIF,
+	// KHR_texture_basisu: a KTX2 container (ETC1S/BasisLZ, UASTC or plain BCn).
+	IMAGE_KTX2,
 }
 
 enum AlphaMode
@@ -795,6 +798,8 @@ fn void? Image.from_json(&self, Object* json)
 				self.mimeType = IMAGE_PNG;
 			case "image/bmp":
 				self.mimeType = IMAGE_BMP;
+			case "image/ktx2":
+				self.mimeType = IMAGE_KTX2;
 		}
 	}
 
@@ -815,6 +820,8 @@ fn void? Image.from_json(&self, Object* json)
 					self.mimeType = IMAGE_PNG;
 				case "data:image/bmp":
 					self.mimeType = IMAGE_BMP;
+				case "data:image/ktx2":
+					self.mimeType = IMAGE_KTX2;
 			}
 			self.type = ENCODED_BASE64;
 			self.uri = uri.copy(mem);
@@ -1055,6 +1062,17 @@ fn Texture Texture.from_json(&self, Object* data)
 {
 	self.sampler = data.get_int("sampler") ?? -1;
 	self.source = data.get_int("source") ?? -1;
+
+	// KHR_texture_basisu points at a KTX2 image instead of the core `source`,
+	// which the exporter omits entirely when the extension is required. Its
+	// source wins when both are present: the KTX2 is the higher-quality copy
+	// and the core one is only a fallback for loaders without the extension.
+	@when_extended(data, TEXTURE_BASISU_EXTENSION ; Object* extension)
+	{
+		int? basisu_source = extension.get_int("source");
+		if (try basisu_source) self.source = basisu_source;
+	};
+
 	return *self;
 }
 
