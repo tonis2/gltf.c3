@@ -1101,7 +1101,7 @@ fn void Sampler.from_json(&self, Object* json)
 	int? magFilter = json.get_int("magFilter");
 	int? minFilter = json.get_int("minFilter");
 	int? wrapS = json.get_int("wrapS");
-	int? wrapT = json.get_int("wrapt");
+	int? wrapT = json.get_int("wrapT");
 
 	if (try wrapS)
 	{
