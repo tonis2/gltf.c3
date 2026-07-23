@@ -1103,6 +1103,9 @@ fn void Sampler.from_json(&self, Object* json)
 	int? wrapS = json.get_int("wrapS");
 	int? wrapT = json.get_int("wrapT");
 
+	self.wrap_s = REPEAT;
+	self.wrap_t = REPEAT;
+
 	if (try wrapS)
 	{
 		switch (wrapS)
