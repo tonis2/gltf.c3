@@ -136,6 +136,12 @@ enum WrapMode
 	REPEAT,
 }
 
+enum MagFilter
+{
+	NEAREST,
+	LINEAR,
+}
+
 enum MinFilter
 {
 	NEAREST,
