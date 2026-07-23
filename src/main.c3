@@ -1137,9 +1137,9 @@ fn void Sampler.from_json(&self, Object* json)
 		switch (magFilter)
 		{
 			case 9728:
-				self.magFilter = LINEAR;
-			case 9729:
 				self.magFilter = NEAREST;
+			case 9729:
+				self.magFilter = LINEAR;
 		}
 	}
 
