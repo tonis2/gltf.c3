@@ -136,6 +136,12 @@ enum WrapMode
 	REPEAT,
 }
 
+enum MagFilter
+{
+	NEAREST,
+	LINEAR,
+}
+
 enum MinFilter
 {
 	NEAREST,
@@ -1101,7 +1107,10 @@ fn void Sampler.from_json(&self, Object* json)
 	int? magFilter = json.get_int("magFilter");
 	int? minFilter = json.get_int("minFilter");
 	int? wrapS = json.get_int("wrapS");
-	int? wrapT = json.get_int("wrapt");
+	int? wrapT = json.get_int("wrapT");
+
+	self.wrap_s = REPEAT;
+	self.wrap_t = REPEAT;
 
 	if (try wrapS)
 	{
@@ -1134,9 +1143,9 @@ fn void Sampler.from_json(&self, Object* json)
 		switch (magFilter)
 		{
 			case 9728:
-				self.magFilter = LINEAR;
-			case 9729:
 				self.magFilter = NEAREST;
+			case 9729:
+				self.magFilter = LINEAR;
 		}
 	}
 

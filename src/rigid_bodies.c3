@@ -15,12 +15,6 @@ enum ShapeType
 	SPHERE,
 }
 
-enum MagFilter
-{
-	NEAREST,
-	LINEAR,
-}
-
 enum DriveType
 {
 	ANGULAR,
