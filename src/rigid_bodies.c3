@@ -1,6 +1,7 @@
 module gltf;
 
 import std::collections::object;
+import std::core::mem::allocator;
 import std::io;
 import std::math;
 import std::math::vector;
@@ -589,7 +590,12 @@ fn Aabb Gltf.collider_aabb(&self, uint node_index)
 // Walks descendants of body_node_index; skips nodes with their own motion (independent bodies).
 macro void Gltf.@each_collider_for_body(Gltf self, uint body_node_index; @callback(Collider collider, uint collider_index, Node node, uint node_index))
 {
-	uint[256] stack;
+	sz node_count = self.nodes.len();
+	if (node_count == 0) return;
+
+	// A node has at most one parent, so the stack never holds more than every node once.
+	uint[] stack = alloc::new_array(mem, uint, node_count);
+	defer alloc::free(mem, stack);
 	sz stack_top = 0;
 
 	// Check the body node itself
