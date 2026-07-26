@@ -965,7 +965,7 @@ fn void? Material.from_json(&self, Object* json, Gltf data)
 	self.normalTexture = self.normalTexture.from_json(normalTexture) ?? default_texture;
 	self.emissiveTexture = self.emissiveTexture.from_json(emissiveTexture) ?? default_texture;
 
-	self.alphaCutOff = (float)json.get_float("alphaCutoff") ?? 0.0;
+	self.alphaCutOff = (float)json.get_float("alphaCutoff") ?? 0.5;
 	self.alphaMode = OPAQUE;
 
 	if (try emissiveFactor)
