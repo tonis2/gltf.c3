@@ -282,7 +282,7 @@ fn void? GltfStream.load_mesh_buffers(&self, uint mesh_index)
 		primitive.attributes.@each(; String attr_name, sz accessor_index)
 		{
 			Accessor accessor = self.gltf.accessors[accessor_index];
-			BufferView view = self.gltf.bufferViews[accessor.view];
+			BufferView view   = self.gltf.bufferViews[accessor.view];
 			self.load_buffer(view.buffer)!;
 		};
 	}
@@ -295,12 +295,12 @@ fn void? GltfStream.load_animation_buffers(&self, uint anim_index)
 	foreach (sampler : animation.samplers)
 	{
 		// Input accessor (time)
-		Accessor input = self.gltf.accessors[sampler.input];
+		Accessor input        = self.gltf.accessors[sampler.input];
 		BufferView input_view = self.gltf.bufferViews[input.view];
 		self.load_buffer(input_view.buffer)!;
 
 		// Output accessor (values)
-		Accessor output = self.gltf.accessors[sampler.output];
+		Accessor output        = self.gltf.accessors[sampler.output];
 		BufferView output_view = self.gltf.bufferViews[output.view];
 		self.load_buffer(output_view.buffer)!;
 	}
@@ -308,9 +308,9 @@ fn void? GltfStream.load_animation_buffers(&self, uint anim_index)
 
 fn void? GltfStream.load_skin_buffers(&self, uint skin_index)
 {
-	Skin skin = self.gltf.skins[skin_index];
+	Skin skin         = self.gltf.skins[skin_index];
 	Accessor accessor = self.gltf.accessors[skin.inverseBindAccessor];
-	BufferView view = self.gltf.bufferViews[accessor.view];
+	BufferView view   = self.gltf.bufferViews[accessor.view];
 	self.load_buffer(view.buffer)!;
 }
 
@@ -492,7 +492,7 @@ fn void GltfStream.unload_node_recursive(&self, uint node_index)
 			primitive.attributes.@each(; String attr_name, sz accessor_index)
 			{
 				Accessor accessor = self.gltf.accessors[accessor_index];
-				BufferView view = self.gltf.bufferViews[accessor.view];
+				BufferView view   = self.gltf.bufferViews[accessor.view];
 				self.unload_buffer(view.buffer);
 			};
 		}
@@ -500,9 +500,9 @@ fn void GltfStream.unload_node_recursive(&self, uint node_index)
 
 	if (node.skin >= 0)
 	{
-		Skin skin = self.gltf.skins[(uint)node.skin];
+		Skin skin         = self.gltf.skins[(uint)node.skin];
 		Accessor accessor = self.gltf.accessors[skin.inverseBindAccessor];
-		BufferView view = self.gltf.bufferViews[accessor.view];
+		BufferView view   = self.gltf.bufferViews[accessor.view];
 		self.unload_buffer(view.buffer);
 	}
 
@@ -566,29 +566,31 @@ macro GltfStream.@cast_buffer(&self, #target, sz index, $Type)
 {
 	Accessor accessor;
 	$if $Typeof(#target)::name == "Accessor":
+
 		{
 			accessor = #target;
 		}
 	$else
+
 		{
 			accessor = self.gltf.accessors[#target]!;
 		}
 	$endif
 
 	BufferView bufferView = self.gltf.bufferViews[accessor.view];
-	sz index_offset = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
-	sz start_offset = accessor.offset + bufferView.offset;
+	sz index_offset       = bufferView.byteStride > 0 ? bufferView.byteStride : accessor.stride();
+	sz start_offset       = accessor.offset + bufferView.offset;
 
 	BufferSlot* slot = &self.buffer_slots[bufferView.buffer];
-	char* data_ptr = slot.ptr + start_offset + (index * index_offset);
+	char* data_ptr   = slot.ptr + start_offset + (index * index_offset);
 	return bitcast(*(char[$Type::size]*)data_ptr, $Type);
 }
 
 fn void* GltfStream.get_data_array(&self, Accessor accessor)
 {
 	BufferView bufferView = self.gltf.bufferViews[accessor.view];
-	BufferSlot* slot = &self.buffer_slots[bufferView.buffer];
-	sz start_offset = accessor.offset + bufferView.offset;
+	BufferSlot* slot      = &self.buffer_slots[bufferView.buffer];
+	sz start_offset       = accessor.offset + bufferView.offset;
 	return slot.ptr[start_offset..(start_offset + bufferView.byteLength)];
 }
 
@@ -611,8 +613,8 @@ macro void GltfStream.@run_animation_channels(
 		if (channel.target.path == POINTER) continue;
 
 		AnimationSampler sampler = animation.samplers[channel.sampler];
-		Accessor time_accessor = self.gltf.accessors[sampler.input];
-		Accessor value_accessor = self.gltf.accessors[sampler.output];
+		Accessor time_accessor   = self.gltf.accessors[sampler.input];
+		Accessor value_accessor  = self.gltf.accessors[sampler.output];
 
 		float max_frame_time = time_accessor.max[0];
 		float min_frame_time = time_accessor.min[0];
@@ -649,10 +651,12 @@ macro void GltfStream.@run_animation_channels(
 								(Quaternionf) { .v = prev_value.value },
 								(Quaternionf) { .v = current_value },
 								interpolation_value
-							).v;
+							)
+								.v;
 						case SCALE:
 							new_value.xyz = prev_value.value.xyz.lerp(current_value.xyz, interpolation_value).xyz;
 						default:
+
 							{
 							}
 					}
@@ -664,21 +668,21 @@ macro void GltfStream.@run_animation_channels(
 					// CUBICSPLINE: each keyframe stores 3 Vec4 values:
 					// [in-tangent, value, out-tangent] at indices [j*3, j*3+1, j*3+2]
 					float prev_time = self.@cast_buffer(time_accessor, j - 1, float);
-					float dt = current_time - prev_time;
-					float t = (float)(frame_time - prev_time) / dt;
-					float t2 = t * t;
-					float t3 = t2 * t;
+					float dt        = current_time - prev_time;
+					float t         = (float)(frame_time - prev_time) / dt;
+					float t2        = t * t;
+					float t3        = t2 * t;
 
 					// Hermite basis functions
-					float h00 = 2 * t3 - 3 * t2 + 1;
-					float h10 = t3 - 2 * t2 + t;
+					float h00 =  2 * t3 - 3 * t2 + 1;
+					float h10 =  t3 - 2 * t2 + t;
 					float h01 = -2 * t3 + 3 * t2;
-					float h11 = t3 - t2;
+					float h11 =  t3 - t2;
 
-					Vec4 prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4);
+					Vec4 prev_val         = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4);
 					Vec4 prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4);
-					Vec4 cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4);
-					Vec4 cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4);
+					Vec4 cur_in_tangent   = self.@cast_buffer(value_accessor, j * 3, Vec4);
+					Vec4 cur_val          = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4);
 
 					Vec4 new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
 						+ cur_in_tangent * (dt * h11);
@@ -716,8 +720,8 @@ macro void GltfStream.@run_pointer_channels(
 		if (channel.target.path != POINTER) continue;
 
 		AnimationSampler sampler = animation.samplers[channel.sampler];
-		Accessor time_accessor = self.gltf.accessors[sampler.input];
-		Accessor value_accessor = self.gltf.accessors[sampler.output];
+		Accessor time_accessor   = self.gltf.accessors[sampler.input];
+		Accessor value_accessor  = self.gltf.accessors[sampler.output];
 
 		float max_frame_time = time_accessor.max[0];
 		float min_frame_time = time_accessor.min[0];
@@ -751,20 +755,20 @@ macro void GltfStream.@run_pointer_channels(
 				else if (sampler.interpolation == CUBICSPLINE)
 				{
 					float prev_time = self.@cast_buffer(time_accessor, j - 1, float);
-					float dt = current_time - prev_time;
-					float t = (float)(frame_time - prev_time) / dt;
-					float t2 = t * t;
-					float t3 = t2 * t;
+					float dt        = current_time - prev_time;
+					float t         = (float)(frame_time - prev_time) / dt;
+					float t2        = t * t;
+					float t3        = t2 * t;
 
-					float h00 = 2 * t3 - 3 * t2 + 1;
-					float h10 = t3 - 2 * t2 + t;
+					float h00 =  2 * t3 - 3 * t2 + 1;
+					float h10 =  t3 - 2 * t2 + t;
 					float h01 = -2 * t3 + 3 * t2;
-					float h11 = t3 - t2;
+					float h11 =  t3 - t2;
 
-					Vec4 prev_val = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4);
+					Vec4 prev_val         = self.@cast_buffer(value_accessor, (j - 1) * 3 + 1, Vec4);
 					Vec4 prev_out_tangent = self.@cast_buffer(value_accessor, (j - 1) * 3 + 2, Vec4);
-					Vec4 cur_in_tangent = self.@cast_buffer(value_accessor, j * 3, Vec4);
-					Vec4 cur_val = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4);
+					Vec4 cur_in_tangent   = self.@cast_buffer(value_accessor, j * 3, Vec4);
+					Vec4 cur_val          = self.@cast_buffer(value_accessor, j * 3 + 1, Vec4);
 
 					Vec4 new_value = prev_val * h00 + prev_out_tangent * (dt * h10) + cur_val * h01
 						+ cur_in_tangent * (dt * h11);
@@ -783,9 +787,9 @@ macro void GltfStream.@build_skin_matrixes(&self, gltf::Skin skin; @callback(uin
 	Accessor skin_accessor = self.gltf.accessors[skin.inverseBindAccessor];
 	foreach (uint index, joint : skin.joints)
 	{
-		gltf::Node joint_node = self.gltf.nodes[joint];
+		gltf::Node joint_node   = self.gltf.nodes[joint];
 		Matrix4f inverse_matrix = self.@cast_buffer(skin_accessor, index, Matrix4f).transpose();
-		Matrix4f matrix = joint_node.global_matrix().mul(inverse_matrix).transpose();
+		Matrix4f matrix         = joint_node.global_matrix().mul(inverse_matrix).transpose();
 		@callback(joint, matrix);
 	}
 }
@@ -806,7 +810,7 @@ macro void? GltfStream.@get_positions(GltfStream* self, Mesh mesh, $Type; @callb
 	foreach (uint prim_index, primitive : mesh.primitives)
 	{
 		Accessor index_accessor = self.gltf.accessors[primitive.attributes["indices"]!!];
-		Accessor pos_accessor = self.gltf.accessors[primitive.attributes["POSITION"]!!];
+		Accessor pos_accessor   = self.gltf.accessors[primitive.attributes["POSITION"]!!];
 
 		for (sz i = 0; i < pos_accessor.count; i++)
 		{
@@ -844,7 +848,7 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 	for (uint i = 0; i < accessor.count; i += 1)
 	{
 		BufferSlot* slot = &self.buffer_slots[bufferView.buffer];
-		char* data = slot.ptr + (accessor.offset + bufferView.offset + (sz)(i * accessor.stride()));
+		char* data       = slot.ptr + (accessor.offset + bufferView.offset + (sz)(i * accessor.stride()));
 
 		switch (accessor.type)
 		{
@@ -861,6 +865,7 @@ fn void GltfStream.debug_buffer(GltfStream* self, Accessor accessor)
 				Vec4 vec = bitcast(*(char[Vec4::size]*)data, Vec4);
 				io::printfn("Parsed Vec4 %f %f %f %f", vec.x, vec.y, vec.z, vec.w);
 			default:
+
 				{
 				}
 		}
@@ -913,7 +918,7 @@ macro void GltfStream.@each_tangent(&self, Primitive primitive; @callback(Vec4 t
 macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @callback(Vec2 uv, sz index))
 {
 	String attr_name = string::tformat("TEXCOORD_%d", set);
-	sz? attr = primitive.attributes.get(attr_name);
+	sz? attr         = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
@@ -927,7 +932,7 @@ macro void GltfStream.@each_texcoord(&self, Primitive primitive, uint set; @call
 macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callback(Vec4 color, sz index))
 {
 	String attr_name = string::tformat("COLOR_%d", set);
-	sz? attr = primitive.attributes.get(attr_name);
+	sz? attr         = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
@@ -941,7 +946,7 @@ macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callbac
 macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callback(ushort[<4>] joints, sz index))
 {
 	String attr_name = string::tformat("JOINTS_%d", set);
-	sz? attr = primitive.attributes.get(attr_name);
+	sz? attr         = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
@@ -955,7 +960,7 @@ macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callbac
 macro void GltfStream.@each_weight(&self, Primitive primitive, uint set; @callback(Vec4 weights, sz index))
 {
 	String attr_name = string::tformat("WEIGHTS_%d", set);
-	sz? attr = primitive.attributes.get(attr_name);
+	sz? attr         = primitive.attributes.get(attr_name);
 	if (try attr)
 	{
 		Accessor accessor = self.gltf.accessors[attr];
@@ -997,7 +1002,7 @@ macro void GltfStream.@each_index_as_uint(&self, Primitive primitive; @callback(
 // Walk all nodes in a scene depth-first using explicit stack.
 macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Node node, uint node_index))
 {
-	Scene scene = self.gltf.scenes[scene_index];
+	Scene scene   = self.gltf.scenes[scene_index];
 	sz node_count = self.gltf.nodes.len();
 	if (node_count == 0) return;
 
@@ -1015,7 +1020,7 @@ macro void GltfStream.@each_node_in_scene(&self, uint scene_index; @callback(Nod
 	while (stack_top > 0)
 	{
 		uint node_index = stack[--stack_top];
-		Node node = self.gltf.nodes[node_index];
+		Node node       = self.gltf.nodes[node_index];
 		@callback(node, node_index);
 
 		sz child_count = node.children.len();
@@ -1031,7 +1036,7 @@ macro void GltfStream.@each_mesh_in_scene(
 	uint scene_index; @callback(Mesh mesh, uint mesh_index, Node node, uint node_index)
 )
 {
-	self.@each_node_in_scene(scene_index; Node node, uint node_index)
+	self.@each_node_in_scene(scene_index ; Node node, uint node_index)
 	{
 		if (node.mesh >= 0)
 		{
@@ -1042,7 +1047,7 @@ macro void GltfStream.@each_mesh_in_scene(
 
 macro void GltfStream.@each_light_in_scene(&self, uint scene_index; @callback(Light light, uint light_index, Node node))
 {
-	self.@each_node_in_scene(scene_index; Node node, uint node_index)
+	self.@each_node_in_scene(scene_index ; Node node, uint node_index)
 	{
 		if (node.has_light())
 		{
@@ -1056,7 +1061,7 @@ macro void GltfStream.@each_camera_in_scene(
 	uint scene_index; @callback(Camera camera, uint camera_index, Node node)
 )
 {
-	self.@each_node_in_scene(scene_index; Node node, uint node_index)
+	self.@each_node_in_scene(scene_index ; Node node, uint node_index)
 	{
 		if (node.has_camera())
 		{
@@ -1070,7 +1075,7 @@ macro void GltfStream.@each_collider_in_scene(
 	uint scene_index; @callback(Collider collider, uint collider_index, Node node, uint node_index)
 )
 {
-	self.@each_node_in_scene(scene_index; Node node, uint node_index)
+	self.@each_node_in_scene(scene_index ; Node node, uint node_index)
 	{
 		if (node.has_collider())
 		{
@@ -1090,7 +1095,7 @@ macro void? GltfStream.@each_morph_position(
 	if (target_index < primitive.targets.len())
 	{
 		AttributeMap target = primitive.targets[target_index];
-		sz? attr = target.get("POSITION");
+		sz? attr            = target.get("POSITION");
 		if (try attr)
 		{
 			Accessor accessor = self.gltf.accessors[attr];
@@ -1111,7 +1116,7 @@ macro void? GltfStream.@each_morph_normal(
 	if (target_index < primitive.targets.len())
 	{
 		AttributeMap target = primitive.targets[target_index];
-		sz? attr = target.get("NORMAL");
+		sz? attr            = target.get("NORMAL");
 		if (try attr)
 		{
 			Accessor accessor = self.gltf.accessors[attr];
@@ -1127,7 +1132,7 @@ macro void? GltfStream.@each_morph_normal(
 
 fn Vec3 GltfStream.skin_vertex(&self, Vec3 position, ushort[<4>] joints, Vec4 weights, Matrix4f[] joint_matrices)
 {
-	Vec4 pos = { position[0], position[1], position[2], 1.0 };
+	Vec4 pos     = { position[0], position[1], position[2], 1.0 };
 	Vec4 skinned = { };
 
 	for (int i = 0; i < 4; i++)
