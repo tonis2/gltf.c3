@@ -1,6 +1,6 @@
 # gltf.c3
 
-A glTF 2.0 parser for C3 with support for both `.gltf` and `.glb` files.
+A glTF 2.0 parser and writer for C3 with support for both `.gltf` and `.glb` files.
 
 ### Features
 
@@ -10,6 +10,7 @@ A glTF 2.0 parser for C3 with support for both `.gltf` and `.glb` files.
 * Skin animations (skeletal)
 * Bounding box (AABB) computation
 * Scene graph traversal
+* Writing `.glb` and self-contained `.gltf`, including skeletons and skin weights
 
 ### Extensions
 
@@ -194,6 +195,65 @@ foreach (uint i, image : stream.gltf.images) {
 // Or load images for a specific material
 stream.load_material_images(0)!;
 ```
+
+## Writing
+
+`GltfBuilder` builds a document from raw data. Every `add_*` call appends to
+one growing binary chunk and returns the accessor index to reference it by, so
+buffer views and accessors stay consistent without being managed by hand.
+
+```c
+GltfBuilder builder = gltf::builder();
+defer builder.free();
+
+WriteAttribute[2] attributes = {
+    { .name = "POSITION", .accessor = builder.add_positions(positions) },
+    { .name = "NORMAL",   .accessor = builder.add_vec3(normals) },
+};
+
+uint mesh = builder.add_mesh("Body");
+builder.add_primitive(mesh, attributes[..], indices: (int)builder.add_indices(triangles));
+builder.add_root(builder.add_node("Body", mesh: (int)mesh));
+
+builder.save_glb("out.glb")!;      // or save_gltf, which embeds the binary as base64
+```
+
+Data helpers cover the common accessor types — `add_positions` (which also
+records the min/max bounds glTF requires), `add_vec2`, `add_vec3`, `add_vec4`,
+`add_indices`, `add_matrices`, `add_joints` and `add_weights`. Indices and
+joint indices are automatically narrowed to the smallest type that fits.
+
+### Writing a rigged mesh
+
+A rigging model produces a weight per bone per vertex, but glTF stores at most
+a few influences per vertex and they must sum to one. `sparsify_weights` does
+that reduction — keeping the strongest influences and rescaling them, so the
+mesh does not deflate toward the origin where the dropped tail used to be.
+
+```c
+Bone[2] bones = {
+    { .name = "root", .parent = -1, .position = { 0, 0, 0 } },
+    { .name = "tip",  .parent =  0, .position = { 0, 2, 0 } },
+};
+
+SkinnedMesh mesh = {
+    .name = "Body",
+    .positions = positions,
+    .normals = normals,
+    .indices = triangles,
+    .bones = bones[..],
+    .weights = dense_weights,   // positions.len * bones.len, vertex-major
+};
+
+gltf::write_skinned_glb("rigged.glb", mesh)!;
+```
+
+Bone positions are given in model space — the same space as the vertices —
+and converted to the parent-relative translations glTF stores, with inverse
+bind matrices derived from them.
+
+For more control, the pieces are usable on their own: `sparsify_weights`,
+`add_skeleton`, `add_skin_binding`, `add_skin` and `inverse_bind_matrices`.
 
 ### Node transforms
 

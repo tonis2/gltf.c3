@@ -1722,6 +1722,7 @@ fn void Gltf.free(Gltf* self)
 	foreach (joint : self.physics_joints) joint.free();
 	foreach (filter : self.collision_filters) filter.free();
 	foreach (image : self.images) image.free();
+	foreach (skin : self.skins) skin.free();
 
 	// CUSTOM_materials_layers extension — see materials_layers.c3.
 	foreach (material : self.materials) material.layers_ext.free();
