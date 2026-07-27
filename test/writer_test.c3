@@ -313,3 +313,117 @@ fn void test_write_skinned_glb() {
     Matrix4f tip_bind = stream.@cast_buffer(bind_accessor, 1, Matrix4f);
     assert(near(tip_bind.m[13], -2.0));
 }
+
+// A bone's direction has to survive the round trip, and it has to survive it
+// without disturbing the bind pose. Those pull against each other: the moment a
+// joint node carries a rotation, its children's translations are expressed in a
+// rotated frame and its inverse bind matrix stops being a pure translation.
+fn void test_skeleton_carries_bone_direction() {
+    Vec3[3] positions = { { -1, 0, 0 }, { 1, 0, 0 }, { 0, 2, 0 } };
+    uint[3] indices = { 0, 1, 2 };
+
+    // A chain that turns two corners, so no two bones share a direction and a
+    // frame mistake has nothing to cancel against.
+    Bone[3] bones = {
+        { .name = "root", .parent = -1, .position = { 0, 0, 0 }, .direction = { 0, 2, 0 } },
+        { .name = "mid",  .parent =  0, .position = { 0, 2, 0 }, .direction = { 3, 0, 0 } },
+        { .name = "tip",  .parent =  1, .position = { 3, 2, 0 }, .direction = { 0, 0, 1 } },
+    };
+
+    float[9] weights = { 1, 0, 0,  1, 0, 0,  0, 1, 0 };
+
+    SkinnedMesh mesh = {
+        .name = "Bent",
+        .positions = positions[..],
+        .indices = indices[..],
+        .bones = bones[..],
+        .weights = weights[..],
+    };
+
+    gltf::write_skinned_glb("test/out_oriented.glb", mesh)!!;
+    defer (void)file::delete("test/out_oriented.glb");
+
+    GltfStream stream = gltf::open("test/out_oriented.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    Skin skin = stream.gltf.skins[0];
+    assert(skin.joints.len() == 3);
+
+    // Compose the chain by hand. World, not local: a child's rotation is stored
+    // relative to its parent's, so reading a local one back would only prove
+    // the writer agrees with itself.
+    Matrix4f[3] world;
+    world[0] = stream.gltf.nodes[skin.joints[0]].local_matrix();
+    world[1] = world[0].mul(stream.gltf.nodes[skin.joints[1]].local_matrix());
+    world[2] = world[1].mul(stream.gltf.nodes[skin.joints[2]].local_matrix());
+
+    Vec3[3] axis = { { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } };
+    Vec3[3] origin = { { 0, 0, 0 }, { 0, 2, 0 }, { 3, 2, 0 } };
+
+    for (usz i = 0; i < 3; i++) {
+        // A bone runs along its node's -Z; column 2 of a column-major matrix is
+        // where local +Z ended up, so the bone is its negation.
+        assert(near(-world[i].m[8], axis[i].x), "joint %d bone axis x", i);
+        assert(near(-world[i].m[9], axis[i].y), "joint %d bone axis y", i);
+        assert(near(-world[i].m[10], axis[i].z), "joint %d bone axis z", i);
+
+        assert(near(world[i].m[12], origin[i].x), "joint %d position x", i);
+        assert(near(world[i].m[13], origin[i].y), "joint %d position y", i);
+        assert(near(world[i].m[14], origin[i].z), "joint %d position z", i);
+    }
+
+    // And the bind pose still cancels: world(joint) * inverseBind == identity,
+    // which is what keeps the mesh undeformed until something is actually posed.
+    Accessor bind = stream.gltf.accessors[skin.inverseBindAccessor];
+    assert(bind.count == 3);
+
+    for (usz i = 0; i < 3; i++) {
+        Matrix4f inverse = stream.@cast_buffer(bind, (sz)i, Matrix4f);
+        Matrix4f product = world[i].mul(inverse);
+        for (usz e = 0; e < 16; e++) {
+            float want = (e % 5 == 0) ? 1.0f : 0.0f;
+            assert(near(product.m[e], want), "joint %d bind pose element %d", i, e);
+        }
+    }
+}
+
+// The old behaviour has to stay reachable: a caller with nothing but joint
+// positions leaves direction zero and gets unrotated nodes, which is honest —
+// the file then says nothing about which way the bones face rather than
+// claiming they all face +Y.
+fn void test_skeleton_without_direction_is_unrotated() {
+    Vec3[3] positions = { { -1, 0, 0 }, { 1, 0, 0 }, { 0, 2, 0 } };
+    uint[3] indices = { 0, 1, 2 };
+    Bone[2] bones = {
+        { .name = "root", .parent = -1, .position = { 0, 0, 0 } },
+        { .name = "tip",  .parent =  0, .position = { 0, 2, 0 } },
+    };
+    float[6] weights = { 1, 0,  1, 0,  0, 1 };
+
+    SkinnedMesh mesh = {
+        .name = "Plain",
+        .positions = positions[..],
+        .indices = indices[..],
+        .bones = bones[..],
+        .weights = weights[..],
+    };
+
+    gltf::write_skinned_glb("test/out_plain.glb", mesh)!!;
+    defer (void)file::delete("test/out_plain.glb");
+
+    GltfStream stream = gltf::open("test/out_plain.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    Skin skin = stream.gltf.skins[0];
+    foreach (joint : skin.joints) {
+        Quaternionf rotation = stream.gltf.nodes[joint].rotation;
+        assert(near(rotation.v[0], 0.0) && near(rotation.v[1], 0.0)
+            && near(rotation.v[2], 0.0) && near(rotation.v[3], 1.0),
+            "an undirected bone should leave its node unrotated");
+    }
+
+    // Parent-relative translation, exactly as before.
+    assert(near(stream.gltf.nodes[skin.joints[1]].translation.y, 2.0));
+}

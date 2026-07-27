@@ -47,12 +47,25 @@ const String[4] WEIGHT_ATTRIBUTES @private = { "WEIGHTS_0", "WEIGHTS_1", "WEIGHT
  that is what a rigging model predicts and what an inverse bind matrix is
  derived from. Converting it to the parent-relative translation glTF stores is
  add_skeleton's job.
+
+ `direction` points from this joint to where the bone ends — head to tail, in
+ the same model space. glTF has no tail: a joint is a node, and the only thing
+ a consumer can read a bone's direction from is the node's own orientation. So
+ leaving this zero writes an unrotated node, and every importer then has to
+ invent a direction. Blender's takes the bone's *length* from the distance to
+ its child but its *direction* from the node's axes, which turns a skeleton
+ written from positions alone into a fan of parallel sticks however sensible
+ the joints are.
+
+ Zero is still the right value when a caller genuinely has only positions;
+ it just means the file does not say which way the bones face.
 *>
 struct Bone
 {
 	String name;
 	int parent;
 	Vec3 position;
+	Vec3 direction;
 }
 
 <*
@@ -181,10 +194,13 @@ fn Matrix4f[] inverse_bind_matrices(Allocator allocator, Matrix4f[] joint_world)
  Add a skeleton as nodes and return the accessor holding its inverse bind
  matrices, with the joint node indices written into `joints`.
 
- Bind pose is translation only, which is what a rigging model that predicts
- joint positions gives you. Each node's translation is its bone's offset from
- its parent, so the world position comes back out as the chain composes, and
- the inverse bind matrix is the inverse of that world position.
+ A bone's world transform is its position and, where `Bone.direction` says so,
+ the rotation that puts its local -Z along the bone. Each node then carries
+ that expressed inside its parent's frame, so the chain composes back to the
+ world transform and the inverse bind matrix is its inverse. Skinning is
+ untouched by the rotation — at bind pose every joint's world transform still
+ cancels against its own inverse bind matrix — but a posed joint now rotates
+ about the bone rather than about the world axes, which is what a rig is for.
 
  @param bones : `Parent indices must be a valid bone index or -1; any order.`
  @param joints : `Receives one node index per bone, in bone order — the order JOINTS_n indexes.`
@@ -192,37 +208,119 @@ fn Matrix4f[] inverse_bind_matrices(Allocator allocator, Matrix4f[] joint_world)
 *>
 fn uint GltfBuilder.add_skeleton(&self, Bone[] bones, List{uint}* joints, List{uint}* roots)
 {
-	foreach (bone : bones)
-	{
-		Vec3 local = bone.position;
-		if (bone.parent >= 0) local = bone.position - bones[bone.parent].position;
-		joints.push(self.add_node(bone.name, translation: local));
-	}
-
-	foreach (i, bone : bones)
-	{
-		if (bone.parent >= 0)
-		{
-			self.add_child(joints.get((sz)bone.parent), joints.get((sz)i));
-		}
-		else
-		{
-			roots.push(joints.get((sz)i));
-		}
-	}
-
 	@pool()
 	{
+		// Every bone's world rotation first: a child expresses itself inside
+		// its parent's frame, and bones may arrive in any order.
+		Quaternionf[] rotation = alloc::new_array(tmem, Quaternionf, bones.len);
+		foreach (i, bone : bones) rotation[i] = bone_rotation(bone.direction);
+
+		foreach (i, bone : bones)
+		{
+			Vec3 local = bone.position;
+			Quaternionf local_rotation = rotation[i];
+			if (bone.parent >= 0)
+			{
+				Quaternionf into_parent = rotation[bone.parent].conjugate();
+				local = into_parent * (bone.position - bones[bone.parent].position);
+				local_rotation = into_parent * rotation[i];
+			}
+			joints.push(self.add_node(bone.name, translation: local, rotation: local_rotation));
+		}
+
+		// The child a bone points at is named first. glTF puts no meaning on
+		// the order, but a consumer that has to guess a bone's length takes
+		// the distance to the first child — Blender does — while taking its
+		// direction from the node. Leave the order alone and those two
+		// disagree wherever a bone aims past its first-listed child, and the
+		// tail stops short of the joint it was aimed at.
+		foreach (i, bone : bones)
+		{
+			if (bone.parent >= 0 && points_at(bones, bone.parent, (usz)i))
+			{
+				self.add_child(joints.get((sz)bone.parent), joints.get((sz)i));
+			}
+		}
+		foreach (i, bone : bones)
+		{
+			if (bone.parent < 0)
+			{
+				roots.push(joints.get((sz)i));
+			}
+			else if (!points_at(bones, bone.parent, (usz)i))
+			{
+				self.add_child(joints.get((sz)bone.parent), joints.get((sz)i));
+			}
+		}
+
 		Matrix4f[] world = alloc::new_array(tmem, Matrix4f, bones.len);
 		foreach (i, bone : bones)
 		{
-			world[i] = matrix::IDENTITY4;
+			world[i] = rotation[i].to_matrix();
 			world[i].m[12] = bone.position.x;
 			world[i].m[13] = bone.position.y;
 			world[i].m[14] = bone.position.z;
 		}
 		return self.add_matrices(inverse_bind_matrices(tmem, world));
 	};
+}
+
+<*
+ Whether `parent`'s bone ends exactly on `child`'s joint.
+
+ Tolerance is relative to the bone's own length, so it means the same thing on
+ a model measured in metres and one measured in centimetres.
+*>
+fn bool points_at(Bone[] bones, int parent, usz child) @private
+{
+	Vec3 direction = bones[parent].direction;
+	float length_sq = direction.length_sq();
+	if (length_sq < 1.0e-18f) return false;
+
+	Vec3 gap = bones[child].position - (bones[parent].position + direction);
+	return gap.length_sq() <= 1.0e-8f * length_sq;
+}
+
+<*
+ The rotation taking a bone's local -Z onto `direction`, the shortest way
+ round.
+
+ -Z, not +Y, and the difference is not arbitrary. glTF never says which local
+ axis a joint's bone runs along, so the convention is whatever the tools agree
+ on, and what they agree on comes from Blender: a Blender bone points along its
+ own +Y, and the Blender-to-glTF axis change maps +Y onto -Z. Exporting a
+ skeleton out of Blender and reading the joint nodes back confirms it — every
+ bone's direction is exactly the node's -Z. Aiming +Y instead writes rotations
+ that are perfectly valid, survive a round trip, and point every bone a quarter
+ turn away from where it belongs.
+
+ Which way the bone rolls about its own length is not determined by a
+ direction, so the shortest arc picks it: it is the one rotation of that pair
+ with no twist in it, and it is stable — a bone whose direction barely changes
+ gets a quaternion that barely changes with it.
+
+ A zero direction means the caller has only a position, and leaves the node
+ unrotated.
+*>
+fn Quaternionf bone_rotation(Vec3 direction) @private
+{
+	float length = direction.length();
+	if (length < 1.0e-9f) return { 0, 0, 0, 1 };
+
+	Vec3 to = direction * (1.0f / length);
+
+	// cross({0,0,-1}, to) is (to.y, -to.x, 0), and 1 + dot({0,0,-1}, to) is the
+	// half-angle term the shortest arc wants.
+	float w = 1.0f - to.z;
+	if (w < 1.0e-6f)
+	{
+		// Straight along +Z: antiparallel, so every half turn about an axis
+		// across the bone is equally short. Take the one about X.
+		return { 1, 0, 0, 0 };
+	}
+
+	float[<4>] q = { to.y, -to.x, 0, w };
+	return { .v = q * (1.0f / (float)math::sqrt((double)(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w))) };
 }
 
 <*
