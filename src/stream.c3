@@ -943,6 +943,16 @@ macro void GltfStream.@each_color(&self, Primitive primitive, uint set; @callbac
 	}
 }
 
+<*
+ Joint indices per vertex, widened to ushort whichever way they were stored.
+
+ glTF allows JOINTS_n as unsigned byte or unsigned short, and `add_joints`
+ narrows to bytes whenever every index fits in one — which is every skeleton
+ under 256 joints, so nearly all of them. Reading the buffer as ushort
+ regardless silently pairs adjacent bytes into one index: a 4-joint rig comes
+ back claiming joint 770. The accessor's own type decides, exactly as
+ `@each_index_as_uint` does for indices.
+*>
 macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callback(ushort[<4>] joints, sz index))
 {
 	String attr_name = string::tformat("JOINTS_%d", set);
@@ -952,7 +962,15 @@ macro void GltfStream.@each_joint(&self, Primitive primitive, uint set; @callbac
 		Accessor accessor = self.gltf.accessors[attr];
 		for (sz i = 0; i < accessor.count; i++)
 		{
-			@callback(self.@cast_buffer(accessor, i, ushort[<4>]), i);
+			if (accessor.data_type == DataType.CHAR)
+			{
+				char[<4>] packed = self.@cast_buffer(accessor, i, char[<4>]);
+				@callback((ushort[<4>]){ packed[0], packed[1], packed[2], packed[3] }, i);
+			}
+			else
+			{
+				@callback(self.@cast_buffer(accessor, i, ushort[<4>]), i);
+			}
 		}
 	}
 }
