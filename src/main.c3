@@ -179,6 +179,11 @@ struct Gltf
 	List{Light} lights;
 	List{String} extensions;
 
+	// The file's own `extras`, the glTF slot for whatever the authoring tool
+	// wanted to say about the asset as a whole. String values only — see
+	// `read_extras`.
+	HashMap{String, String} extras;
+
 	Materials materials;
 	SkinList skins;
 
@@ -424,6 +429,41 @@ fn void Scene.free(self)
 	self.name.free(mem);
 }
 
+<*
+ Read a glTF `extras` object into a string map, if there is one.
+
+ glTF allows any JSON under `extras`; anything that is not a string is dropped,
+ because a map of strings is what every reader of these wants and there is no
+ shape that could carry the rest.
+
+ @param out : `An initialised map; untouched when the object carries no extras.`
+*>
+fn void read_extras(HashMap{String, String}* out, Object* json) @local
+{
+	Object*? extras = json.get("extras");
+	if (catch extras) return;
+
+	extras.map.@each(; String key, Object* value)
+	{
+		if (value.is_string())
+		{
+			out.set(key, value.s.copy(mem));
+		}
+	};
+}
+
+<*
+ Release a map filled by `read_extras`, its values included.
+
+ The keys are the map's own copies and go with `HashMap.free`; only the values
+ were allocated here. See `read_extras`.
+*>
+fn void HashMap{String, String}.release(&self)
+{
+	self.@each(; String key, String value) { value.free(mem); };
+	self.free();
+}
+
 fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 {
 	self.children.init(allocator);
@@ -453,18 +493,8 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	Object*? translation = json.get("translation");
 	Object*? matrix = json.get("matrix");
 	Object*? children = json.get("children");
-	Object*? extras = json.get("extras");
 
-	if (try extras)
-	{
-		extras.map.@each(; String key, Object* value)
-		{
-			if (value.is_string())
-			{
-				self.extras.set(key, value.s.copy(mem));
-			}
-		};
-	}
+	read_extras(&self.extras, json);
 
 	@when_extended(json, PUNCTUAL_LIGHT_EXTENSION ; Object* extension)
 	{
@@ -590,7 +620,7 @@ fn void Node.free(&self)
 	self.weights.free();
 	self.name.free(mem);
 	self.attributes.free();
-	self.extras.free();
+	self.extras.release();
 }
 
 fn void Mesh.from_json(&self, Object* json, Allocator allocator)
@@ -1344,6 +1374,7 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	content.animations.init(allocator);
 	content.lights.init(allocator);
 	content.extensions.init(allocator);
+	content.extras.init(allocator);
 	content.materials.init(allocator);
 	content.skins.init(allocator);
 	content.shapes.init(allocator);
@@ -1453,6 +1484,8 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	Object*? textures = gltfJson.get("textures");
 	Object*? animations = gltfJson.get("animations");
 	Object*? skins = gltfJson.get("skins");
+
+	read_extras(&content.extras, gltfJson);
 
 	// For GLB, buffer.source_offset is 0 (data starts at beginning of binary chunk)
 	// The absolute file offset is stored in result.glb_binary_offset
@@ -1751,6 +1784,7 @@ fn void Gltf.free(Gltf* self)
 	self.extensions.free();
 	self.animations.free();
 	self.skins.free();
+	self.extras.release();
 }
 
 fn Node? Gltf.find_node(Gltf* self, String name)
