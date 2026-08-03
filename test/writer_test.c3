@@ -18,6 +18,20 @@ const float EPSILON = 0.0001;
 // A macro, not a function: every fn in an @test module is collected as a test.
 macro bool near(float a, float b) => math::abs(a - b) < EPSILON;
 
+macro usz count_of(String haystack, String needle) {
+    usz found = 0;
+    usz at = 0;
+    while (at + needle.len <= haystack.len) {
+        if (haystack[at:needle.len] == needle) {
+            found++;
+            at += needle.len;
+            continue;
+        }
+        at++;
+    }
+    return found;
+}
+
 fn void test_write_triangle() {
     Vec3[3] positions = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };
     Vec3[3] normals = { { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 } };
@@ -426,4 +440,163 @@ fn void test_skeleton_without_direction_is_unrotated() {
 
     // Parent-relative translation, exactly as before.
     assert(near(stream.gltf.nodes[skin.joints[1]].translation.y, 2.0));
+}
+
+// --- Animation ---
+
+fn void test_write_animation() {
+    // A two-joint chain: the root turns, the child slides and pulses.
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    uint root = builder.add_node("root");
+    uint child = builder.add_node("child", translation: { 0, 1, 0 });
+    builder.add_child(root, child);
+    builder.add_root(root);
+
+    float[3] times = { 0.5, 1.5, 2.0 };
+    Quaternionf[3] turns = { { 0, 0, 0, 1 }, { 0, 0.7071, 0, 0.7071 }, { 0, 0, 0, 1 } };
+    Vec3[3] slides = { { 0, 1, 0 }, { 0, 2, 0 }, { 0, 1, 0 } };
+    Vec3[3] pulses = { { 1, 1, 1 }, { 2, 2, 2 }, { 1, 1, 1 } };
+
+    uint input = builder.add_times(times[..]);
+    uint clip = builder.add_animation("Wave");
+    builder.add_channel(clip, builder.add_sampler(clip, input, builder.add_rotations(turns[..])), root, ROTATION);
+    builder.add_channel(clip, builder.add_sampler(clip, input, builder.add_vectors(slides[..])), child, TRANSLATION);
+    builder.add_channel(clip, builder.add_sampler(clip, input, builder.add_vectors(pulses[..]), STEP), child, SCALE);
+
+    builder.save_glb("test/out_animation.glb")!!;
+    defer (void)file::delete("test/out_animation.glb");
+
+    GltfStream stream = gltf::open("test/out_animation.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    assert(stream.gltf.animations.len() == 1);
+    Animation clip_back = stream.gltf.animations[0];
+    assert(clip_back.name == "Wave");
+    assert(clip_back.samplers.len() == 3);
+    assert(clip_back.channels.len() == 3);
+
+    // The duration the parser reports is read off the input accessor's bounds,
+    // so a sampler input written without min/max reads back as 0..0 and every
+    // clip in the file claims to be instantaneous.
+    assert(near(clip_back.min_time, 0.5) && near(clip_back.max_time, 2.0));
+
+    assert(clip_back.channels[0].target.node == root);
+    assert(clip_back.channels[0].target.path == AnimationProperty.ROTATION);
+    assert(clip_back.channels[1].target.node == child);
+    assert(clip_back.channels[1].target.path == AnimationProperty.TRANSLATION);
+    assert(clip_back.channels[2].target.path == AnimationProperty.SCALE);
+
+    // LINEAR is the glTF default and is left out; STEP has to be written. Both
+    // spellings are checked here because the omission and the parser's default
+    // have to agree or every clip silently changes shape.
+    assert(clip_back.samplers[0].interpolation == Interpolation.LINEAR);
+    assert(clip_back.samplers[2].interpolation == Interpolation.STEP);
+
+    // One run of key times shared by all three curves, which is the whole point
+    // of samplers being separate from channels.
+    assert(clip_back.samplers[0].input == clip_back.samplers[1].input);
+    assert(clip_back.samplers[1].input == clip_back.samplers[2].input);
+
+    Accessor rotations = stream.gltf.accessors[clip_back.samplers[0].output];
+    assert(rotations.count == 3 && rotations.type == AccessorType.VEC4);
+    for (uint i = 0; i < 3; i++) {
+        Vec4 read = stream.@cast_buffer(rotations, i, Vec4);
+        assert(near(read.x, turns[i].v[0]) && near(read.y, turns[i].v[1])
+            && near(read.z, turns[i].v[2]) && near(read.w, turns[i].v[3]));
+    }
+
+    Accessor translations = stream.gltf.accessors[clip_back.samplers[1].output];
+    assert(translations.count == 3 && translations.type == AccessorType.VEC3);
+    for (uint i = 0; i < 3; i++) {
+        Vec3 read = stream.@cast_buffer(translations, i, Vec3);
+        assert(near(read.y, slides[i].y));
+    }
+}
+
+fn void test_animation_views_have_no_target() {
+    // glTF reserves bufferView.target for vertex and index data; a view without
+    // one is how a reader is told it holds animation or skin data instead.
+    // Nothing here is vertex data, so nothing may carry a target.
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    uint node = builder.add_node("joint");
+    builder.add_root(node);
+
+    float[2] times = { 0, 1 };
+    Quaternionf[2] turns = { { 0, 0, 0, 1 }, { 0, 0, 0, 1 } };
+    Vec3[2] slides = { { 0, 0, 0 }, { 0, 1, 0 } };
+
+    uint input = builder.add_times(times[..]);
+    uint clip = builder.add_animation("Move");
+    builder.add_channel(clip, builder.add_sampler(clip, input, builder.add_rotations(turns[..])), node, ROTATION);
+    builder.add_channel(clip, builder.add_sampler(clip, input, builder.add_vectors(slides[..])), node, TRANSLATION);
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+
+    // Checked in the text: Targets has no "absent" value, so a parsed
+    // BufferView cannot tell the two apart and only the JSON can answer.
+    //
+    // Matched with the value attached, because a channel's target is also
+    // spelled "target" and is an object — the two bufferView targets are 34962
+    // and 34963, so a digit is enough to tell them apart.
+    assert(!json.str_view().contains(`"target":3`),
+        "animation sampler data must not tag its bufferView with a target");
+}
+
+// --- Extras ---
+
+fn void test_write_extras() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    builder.add_root(builder.add_node("root"));
+    builder.set_extra("plan", "biped");
+    builder.set_extra("tags", "biped, humanoid");
+    builder.set_extra("version", "1");
+
+    // Last write wins, so metadata can be assembled in pieces.
+    builder.set_extra("plan", "quadruped");
+
+    // A value typed by a human, not an exporter: it has to survive as itself
+    // rather than ending the JSON string early.
+    builder.set_extra("name", `The "Big" Pack`);
+
+    // Checked in the text rather than through the parser: a JSON object with
+    // the same key twice collapses on the way back in, so a builder that
+    // appended instead of replacing reads back correctly here while writing a
+    // file whose first "plan" some other parser takes instead.
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(count_of(json.str_view(), `"plan":`) == 1, "a replaced key must be written once");
+
+    builder.save_glb("test/out_extras.glb")!!;
+    defer (void)file::delete("test/out_extras.glb");
+
+    GltfStream stream = gltf::open("test/out_extras.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.extras.len() == 4, "one entry per key, not per set_extra call");
+    assert(stream.gltf.extras["plan"]!! == "quadruped");
+    assert(stream.gltf.extras["tags"]!! == "biped, humanoid");
+    assert(stream.gltf.extras["version"]!! == "1");
+    assert(stream.gltf.extras["name"]!! == `The "Big" Pack`);
+}
+
+fn void test_no_extras_writes_no_object() {
+    // A document that says nothing about itself must not carry an empty extras
+    // object: read_pack-style callers treat its presence as a claim.
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    builder.add_root(builder.add_node("root"));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+
+    assert(!json.str_view().contains(`"extras"`));
 }

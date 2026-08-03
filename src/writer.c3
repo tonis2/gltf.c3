@@ -27,6 +27,12 @@
  instead means what comes out is always a document this library could have
  parsed, which is what writer_test.c3 checks.
 
+ Animations are built the same way — `add_times` and `add_rotations` produce
+ the accessors, `add_animation` opens a clip, and `add_sampler` / `add_channel`
+ bind the curves to the nodes they drive. Application metadata goes through
+ `set_extra`, which writes the root `extras` object the parser reads back into
+ `Gltf.extras`.
+
  See skinning.c3 for the skeleton, weights and inverse bind matrices a rigged
  asset needs on top of this.
 *>
@@ -41,6 +47,7 @@ import std::core::dstring;
 import std::math;
 import std::math::matrix;
 import std::math::vector;
+import std::math::quaternion;
 import std::collections::list;
 import std::encoding::base64;
 
@@ -100,6 +107,38 @@ fn uint AccessorType.component_count(self)
 	}
 }
 
+// The spellings Animation.from_json decodes, so a sampler written here comes
+// back as the interpolation it was given.
+fn String Interpolation.gltf_name(self)
+{
+	switch (self)
+	{
+		case LINEAR:      return "LINEAR";
+		case STEP:        return "STEP";
+		case CUBICSPLINE: return "CUBICSPLINE";
+	}
+}
+
+<*
+ The spellings Animation.from_json decodes for a channel target.
+
+ POINTER is spelled but not writable: the path alone is meaningless without the
+ KHR_animation_pointer object naming what it points at, which this writer does
+ not emit, so add_channel rejects it rather than producing a file whose target
+ resolves to nothing.
+*>
+fn String AnimationProperty.gltf_name(self)
+{
+	switch (self)
+	{
+		case TRANSLATION: return "translation";
+		case ROTATION:    return "rotation";
+		case SCALE:       return "scale";
+		case WEIGHTS:     return "weights";
+		case POINTER:     return "pointer";
+	}
+}
+
 <*
  One named vertex attribute of a primitive: "POSITION", "JOINTS_0", and so on.
 
@@ -146,6 +185,39 @@ struct WriteSkin
 	List{uint} joints;
 }
 
+struct WriteSampler
+{
+	uint input;
+	uint output;
+	Interpolation interpolation;
+}
+
+struct WriteChannel
+{
+	uint sampler;
+	uint node;
+	AnimationProperty path;
+}
+
+struct WriteAnimation
+{
+	String name;
+	List{WriteSampler} samplers;
+	List{WriteChannel} channels;
+}
+
+<*
+ One root-level `extras` entry.
+
+ Kept as an ordered list for the reason WriteAttribute gives: a map would
+ reorder between runs and make two builds of the same data impossible to diff.
+*>
+struct WriteExtra
+{
+	String key;
+	String value;
+}
+
 struct WriteView
 {
 	sz offset;
@@ -175,6 +247,8 @@ struct GltfBuilder
 	List{WriteMesh} meshes;
 	List{WriteNode} nodes;
 	List{WriteSkin} skins;
+	List{WriteAnimation} animations;
+	List{WriteExtra} extras;
 	List{uint} roots;
 	String generator;
 }
@@ -192,6 +266,8 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.meshes.init(allocator);
 	self.nodes.init(allocator);
 	self.skins.init(allocator);
+	self.animations.init(allocator);
+	self.extras.init(allocator);
 	self.roots.init(allocator);
 	self.generator = "gltf.c3";
 	return self;
@@ -228,6 +304,21 @@ fn void GltfBuilder.free(&self)
 		skin.name.free(self.allocator);
 	}
 	self.skins.free();
+
+	foreach (animation : self.animations)
+	{
+		animation.samplers.free();
+		animation.channels.free();
+		animation.name.free(self.allocator);
+	}
+	self.animations.free();
+
+	foreach (extra : self.extras)
+	{
+		extra.key.free(self.allocator);
+		extra.value.free(self.allocator);
+	}
+	self.extras.free();
 
 	self.roots.free();
 }
@@ -442,6 +533,79 @@ fn uint GltfBuilder.add_weights(&self, float[] data)
 	return self.add_accessor(view, FLOAT, VEC4, (uint)(data.len / 4));
 }
 
+// --- Animation data ---
+//
+// None of these tag their bufferView with a target. glTF reserves target for
+// vertex and index data, and says a view without one holds animation or skin
+// data — so borrowing add_vec3 for a translation track would write a file every
+// validator complains about.
+
+<*
+ Key times for an animation sampler, in seconds.
+
+ Carries min and max, which glTF requires of a sampler input and which is how a
+ reader knows a clip's duration without walking the buffer.
+
+ @param data : `Ascending times; a sampler pairs these with one value each.`
+ @return `The accessor index to pass to add_sampler as its input.`
+*>
+fn uint GltfBuilder.add_times(&self, float[] data)
+{
+	sz offset = self.begin_view();
+	foreach (value : data) self.append_f32(value);
+	uint index = self.add_accessor(self.end_view(offset), FLOAT, SCALAR, (uint)data.len);
+
+	WriteAccessor* accessor = self.accessors.get_ref(index);
+	accessor.has_bounds = true;
+	if (data.len == 0) return index;
+
+	float low = data[0];
+	float high = data[0];
+	foreach (value : data)
+	{
+		low = math::min(low, value);
+		high = math::max(high, value);
+	}
+	accessor.min[0] = low;
+	accessor.max[0] = high;
+	return index;
+}
+
+<*
+ Rotation keys, one quaternion per key time.
+
+ @return `The accessor index to pass to add_sampler as its output.`
+*>
+fn uint GltfBuilder.add_rotations(&self, Quaternionf[] data)
+{
+	sz offset = self.begin_view();
+	foreach (value : data)
+	{
+		self.append_f32(value.v[0]);
+		self.append_f32(value.v[1]);
+		self.append_f32(value.v[2]);
+		self.append_f32(value.v[3]);
+	}
+	return self.add_accessor(self.end_view(offset), FLOAT, VEC4, (uint)data.len);
+}
+
+<*
+ Translation or scale keys, one vector per key time.
+
+ @return `The accessor index to pass to add_sampler as its output.`
+*>
+fn uint GltfBuilder.add_vectors(&self, Vec3[] data)
+{
+	sz offset = self.begin_view();
+	foreach (value : data)
+	{
+		self.append_f32(value.x);
+		self.append_f32(value.y);
+		self.append_f32(value.z);
+	}
+	return self.add_accessor(self.end_view(offset), FLOAT, VEC3, (uint)data.len);
+}
+
 // --- Scene graph ---
 
 fn uint GltfBuilder.add_mesh(&self, String name)
@@ -517,6 +681,87 @@ fn uint GltfBuilder.add_skin(&self, String name, uint[] joints, int inverse_bind
 	foreach (joint : joints) skin.joints.push(joint);
 	self.skins.push(skin);
 	return (uint)self.skins.len() - 1;
+}
+
+// --- Animation ---
+
+<*
+ Start an animation. Curves are attached to it by add_sampler and add_channel,
+ which take the index this returns.
+
+ An animation with no channels is legal glTF and plays nothing; the accessors
+ its samplers would have referenced are simply never added.
+
+ @return `The animation index, to reference from add_sampler and add_channel.`
+*>
+fn uint GltfBuilder.add_animation(&self, String name)
+{
+	WriteAnimation animation;
+	animation.name = name.copy(self.allocator);
+	animation.samplers.init(self.allocator);
+	animation.channels.init(self.allocator);
+	self.animations.push(animation);
+	return (uint)self.animations.len() - 1;
+}
+
+<*
+ One curve: key times paired with the values at them.
+
+ A sampler drives nothing until a channel points it at a node, and one sampler
+ may be shared by several channels — which is what lets every joint in a clip
+ reference the same input accessor.
+
+ @param animation : `Index returned by add_animation.`
+ @param input : `Accessor of key times, from add_times.`
+ @param output : `Accessor of values, one per key time — add_rotations or add_vectors.`
+ @return `The sampler index within this animation, for add_channel.`
+*>
+fn uint GltfBuilder.add_sampler(&self, uint animation, uint input, uint output, Interpolation interpolation = LINEAR)
+{
+	WriteAnimation* target = self.animations.get_ref(animation);
+	target.samplers.push({ .input = input, .output = output, .interpolation = interpolation });
+	return (uint)target.samplers.len() - 1;
+}
+
+<*
+ Bind a sampler to the node property it drives.
+
+ @param animation : `Index returned by add_animation.`
+ @param sampler : `Index returned by add_sampler on that same animation.`
+ @param node : `Node index the curve drives.`
+ @param path : `Which of the node's properties the sampler's values are.`
+ @require path != AnimationProperty.POINTER : `KHR_animation_pointer targets are not written; see AnimationProperty.gltf_name.`
+*>
+fn void GltfBuilder.add_channel(&self, uint animation, uint sampler, uint node, AnimationProperty path)
+{
+	self.animations.get_ref(animation).channels.push({ .sampler = sampler, .node = node, .path = path });
+}
+
+// --- Extras ---
+
+<*
+ Set a root-level `extras` entry — the object glTF leaves entirely to whoever
+ writes the file, and the one place application metadata can go without an
+ extension.
+
+ Strings only, matching what the parser keeps (see `Gltf.extras`): a number or
+ an array written here would be dropped on the way back in, so offering them
+ would be offering a silent round-trip loss. Numbers belong here spelled as
+ text.
+
+ Setting a key twice replaces the value, so metadata can be assembled in pieces
+ without the caller tracking what it has already written.
+*>
+fn void GltfBuilder.set_extra(&self, String key, String value)
+{
+	foreach (i, extra : self.extras)
+	{
+		if (extra.key != key) continue;
+		extra.value.free(self.allocator);
+		self.extras.get_ref(i).value = value.copy(self.allocator);
+		return;
+	}
+	self.extras.push({ .key = key.copy(self.allocator), .value = value.copy(self.allocator) });
 }
 
 // --- JSON ---
@@ -601,6 +846,19 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 	o.append_string(`{"asset":{"version":"2.0","generator":`);
 	append_json_string(o, self.generator);
 	o.append_char('}');
+
+	if (self.extras.len() > 0)
+	{
+		o.append_string(`,"extras":{`);
+		foreach (i, extra : self.extras)
+		{
+			if (i > 0) o.append_char(',');
+			append_json_string(o, extra.key);
+			o.append_char(':');
+			append_json_string(o, extra.value);
+		}
+		o.append_char('}');
+	}
 
 	if (self.roots.len() > 0)
 	{
@@ -725,6 +983,47 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 			o.append_string(`"joints":`);
 			append_json_uints(o, &skin.joints);
 			o.append_char('}');
+		}
+		o.append_char(']');
+	}
+
+	if (self.animations.len() > 0)
+	{
+		o.append_string(`,"animations":[`);
+		foreach (i, animation : self.animations)
+		{
+			if (i > 0) o.append_char(',');
+			o.append_char('{');
+			if (animation.name.len > 0)
+			{
+				o.append_string(`"name":`);
+				append_json_string(o, animation.name);
+				o.append_char(',');
+			}
+
+			o.append_string(`"samplers":[`);
+			foreach (j, sampler : animation.samplers)
+			{
+				if (j > 0) o.append_char(',');
+				o.appendf(`{"input":%d,"output":%d`, sampler.input, sampler.output)!!;
+				// LINEAR is the glTF default and is left implicit.
+				if (sampler.interpolation != LINEAR)
+				{
+					o.append_string(`,"interpolation":`);
+					append_json_string(o, sampler.interpolation.gltf_name());
+				}
+				o.append_char('}');
+			}
+
+			o.append_string(`],"channels":[`);
+			foreach (j, channel : animation.channels)
+			{
+				if (j > 0) o.append_char(',');
+				o.appendf(`{"sampler":%d,"target":{"node":%d,"path":`, channel.sampler, channel.node)!!;
+				append_json_string(o, channel.path.gltf_name());
+				o.append_string("}}");
+			}
+			o.append_string("]}");
 		}
 		o.append_char(']');
 	}

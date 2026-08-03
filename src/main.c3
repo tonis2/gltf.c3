@@ -1434,23 +1434,37 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 		gltfJson = json::parse(allocator, (String)json_buf);
 		stream.seek((sz)20 + json_chunk_length, SeekOrigin.FROM_START)!;
 
-		if (catch err = stream.read(&binary_header))
-		{
-			return JSON_PARSE_FAILED~;
-		}
-
-		uint binary_chunk_length = bitcast(*(char[4]*)binary_header[0..3], uint);
-		char[4] binary_chunk_type = binary_header[4..7];
-
-		if (binary_chunk_type[0..] != "BIN\0")
-		{
-			return UNSUPPORTED_GLTF_VERSION~;
-		}
-
-		// Record GLB binary chunk layout for deferred loading
+		// Record GLB binary chunk layout for deferred loading.
+		//
+		// The BIN chunk is optional — a .glb holding only JSON is a valid
+		// document, which is what a file carrying metadata and a scene graph
+		// with no geometry looks like. Whether one follows is decided from the
+		// total size in the header rather than by attempting the read: reading
+		// past the end does not fail here, it leaves binary_header holding
+		// whatever was already on the stack, which then fails the "BIN\0" test
+		// and refuses a file that is perfectly well formed.
 		result.is_glb = true;
-		result.glb_binary_offset = (sz)gltf_size - binary_chunk_length;
-		result.glb_binary_length = binary_chunk_length;
+		result.glb_binary_offset = 0;
+		result.glb_binary_length = 0;
+
+		if ((sz)gltf_size >= (sz)20 + (sz)json_chunk_length + 8)
+		{
+			if (catch err = stream.read(&binary_header))
+			{
+				return JSON_PARSE_FAILED~;
+			}
+
+			uint binary_chunk_length = bitcast(*(char[4]*)binary_header[0..3], uint);
+			char[4] binary_chunk_type = binary_header[4..7];
+
+			if (binary_chunk_type[0..] != "BIN\0")
+			{
+				return UNSUPPORTED_GLTF_VERSION~;
+			}
+
+			result.glb_binary_offset = (sz)gltf_size - binary_chunk_length;
+			result.glb_binary_length = binary_chunk_length;
+		}
 	}
 	else
 	{
