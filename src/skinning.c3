@@ -212,8 +212,7 @@ fn uint GltfBuilder.add_skeleton(&self, Bone[] bones, List{uint}* joints, List{u
 	{
 		// Every bone's world rotation first: a child expresses itself inside
 		// its parent's frame, and bones may arrive in any order.
-		Quaternionf[] rotation = alloc::new_array(tmem, Quaternionf, bones.len);
-		foreach (i, bone : bones) rotation[i] = bone_rotation(bone.direction);
+		Quaternionf[] rotation = bone_rotations(tmem, bones);
 
 		foreach (i, bone : bones)
 		{
@@ -279,6 +278,30 @@ fn bool points_at(Bone[] bones, int parent, usz child) @private
 
 	Vec3 gap = bones[child].position - (bones[parent].position + direction);
 	return gap.length_sq() <= 1.0e-8f * length_sq;
+}
+
+<*
+ Every bone's world rotation: the one taking its local -Z onto its direction.
+
+ 	`Quaternionf[] rest = gltf::bone_rotations(mem, bones);`
+
+ The frame `add_skeleton` writes its nodes in, exposed because a caller writing
+ animation channels against those nodes has to convert into it. A pose expressed
+ as a rotation about the joint in world axes becomes this node's local rotation
+ as `rotation[parent]^-1 * pose * rotation[joint]`, and its local translation as
+ `rotation[parent]^-1` applied to the offset from the parent — which at rest is
+ exactly what `add_skeleton` writes, since a rest pose is the identity.
+
+ Indexed by bone, in the order `bones` arrives, which is the order
+ `add_skeleton` fills its `joints` list in.
+
+ The caller owns the returned array.
+*>
+fn Quaternionf[] bone_rotations(Allocator allocator, Bone[] bones)
+{
+	Quaternionf[] rotation = alloc::new_array(allocator, Quaternionf, bones.len);
+	foreach (i, bone : bones) rotation[i] = bone_rotation(bone.direction);
+	return rotation;
 }
 
 <*
