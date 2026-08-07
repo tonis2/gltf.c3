@@ -1384,11 +1384,6 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	content.colliders.init(allocator);
 	content.motions.init(allocator);
 
-	// Every failure below happens after those Lists exist, and a caller that is
-	// handed a fault never receives the ParseResult and so cannot free them. An
-	// unreadable file would otherwise cost one whole document's allocations —
-	// which is a per-file leak for anything scanning a folder it does not
-	// control, since "not a glTF" is an ordinary thing to find in one.
 	defer catch content.free();
 
 	Object*? gltfJson;
