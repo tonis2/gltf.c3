@@ -207,6 +207,44 @@ fn void test_a_double_survives_being_written()
 	assert(bad.str_view() == "null", "got %s", bad.str_view());
 }
 
+<*
+ The same for a float, and the reason it is not the double writer with a cast.
+
+ A float widened to double round-trips through nine digits at most, but the
+ *double* it widened to needs seventeen — so the digits past the ninth are the
+ only difference between the two writers, and they say nothing a reader can use.
+*>
+fn void test_a_float_survives_being_written()
+{
+	float[4] awkward = { 0.12267040f, 1.0f / 3.0f, 1.0e-8f, 12345.6789f };
+
+	foreach (value : awkward)
+	{
+		DString out = dstring::new(mem);
+		defer out.free();
+		gltf::write_json_float(&out, value);
+
+		float back = out.str_view().to_float()!!;
+		assert(back == value, "%s did not round-trip", out.str_view());
+	}
+
+	// Shorter than the same value through the double writer, which is the point.
+	DString shorter = dstring::new(mem);
+	defer shorter.free();
+	gltf::write_json_float(&shorter, 0.12267040f);
+	assert(shorter.str_view() == "0.1226704", "got %s", shorter.str_view());
+
+	DString half = dstring::new(mem);
+	defer half.free();
+	gltf::write_json_float(&half, 0.5f);
+	assert(half.str_view() == "0.5", "got %s", half.str_view());
+
+	DString bad = dstring::new(mem);
+	defer bad.free();
+	gltf::write_json_float(&bad, (float)(0.0 / 0.0));
+	assert(bad.str_view() == "null", "got %s", bad.str_view());
+}
+
 // The escapes JSON names, and the control characters it does not.
 fn void test_a_string_is_escaped()
 {

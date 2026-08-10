@@ -853,3 +853,43 @@ fn void write_json_double(DString* out, double value)
 		out.append_string(string::format(scratch, "%.17g", value));
 	};
 }
+
+<*
+ Append a number that reads back as the same float.
+
+ 	`gltf::write_json_float(&out, joint.reach);`
+
+ The same search as `write_json_double`, over the range a binary32 needs: nine
+ significant digits always round-trip one, and most need six or seven.
+
+ Worth having as its own function rather than widening to double and calling
+ that. A float is a double the moment it is passed, and the shortest text that
+ round-trips *the double* is not the shortest that round-trips the float it came
+ from — `0.12267040f` widens to a double needing seventeen digits, and comes back
+ out spelled `0.12267039716243744`. Every one of those extra digits is a
+ restatement of where the binary32 ran out, written into a file for a reader that
+ will narrow it back to the same float regardless.
+*>
+fn void write_json_float(DString* out, float value)
+{
+	if (!math::is_finite(value))
+	{
+		out.append_string("null");
+		return;
+	}
+
+	@stack_mem(64; Allocator scratch)
+	{
+		for (int digits = 6; digits <= 9; digits++)
+		{
+			String printed = string::format(scratch, "%.*g", digits, (double)value);
+			float? back = printed.to_float();
+			if (try back && back == value)
+			{
+				out.append_string(printed);
+				return;
+			}
+		}
+		out.append_string(string::format(scratch, "%.9g", (double)value));
+	};
+}
