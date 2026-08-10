@@ -52,13 +52,16 @@ struct GltfStream
 fn GltfStream? open(String path, Allocator allocator = mem)
 {
 	File? file = file::open(path, "r");
-	defer file.close()!!;
 
+	// Before the defer, not after it: on a path that does not exist `file` holds
+	// the fault, and a deferred `close()!!` unwraps it on the way out — so a
+	// caller asking about a missing file got a panic instead of the fault this
+	// returns.
 	if (catch err = file)
 	{
-		io::printfn("Failed to find the gltf file");
 		return FILE_NOT_FOUND~;
 	}
+	defer file.close()!!;
 
 	ParseResult result = parse_metadata(&file, allocator)!;
 
