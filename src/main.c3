@@ -18,6 +18,15 @@ alias AttributeMap = HashMap{String, sz};
 alias Materials = List{Material};
 alias NodeList = List{Node};
 
+<*
+ A number out of parsed JSON, whatever the parser typed it. A number written
+ without a decimal point — `"scale": [1, 1, 1]`, an accessor index — parses as
+ an integer, and reading `.f` off one reinterprets the integer bits as a
+ double: 1 becomes 5e-324, which a float cast then flushes to zero. Every
+ numeric read out of a parsed document must come through here.
+*>
+macro double @num(Object* o) => o.is_int() ? (double)o.i : o.f;
+
 const PUNCTUAL_LIGHT_EXTENSION      = "KHR_lights_punctual";
 const NODE_VISIBILITY_EXTENSION     = "KHR_node_visibility";
 const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
@@ -420,7 +429,7 @@ fn void Scene.from_json(&self, Object* json, Allocator allocator)
 	String? name = json.get_string("name");
 	Object*? nodes = json.get("nodes");
 	if (try name) self.name = name.copy(mem);
-	if (try nodes) foreach (node : nodes.array) self.nodes.push((uint)node.f);
+	if (try nodes) foreach (node : nodes.array) self.nodes.push((uint)@num(node));
 }
 
 fn void Scene.free(self)
@@ -513,7 +522,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 		{
 			attributes.map.@each(; String key, Object* value)
 			{
-				self.attributes.set(key, (uint)value.f);
+				self.attributes.set(key, (uint)@num(value));
 			};
 		}
 	};
@@ -573,36 +582,36 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	if (try rotation)
 	{
 		self.rotation = {
-			(float)rotation.get_at(0).f,
-			(float)rotation.get_at(1).f,
-			(float)rotation.get_at(2).f,
-			(float)rotation.get_at(3).f
+			(float)@num(rotation.get_at(0)),
+			(float)@num(rotation.get_at(1)),
+			(float)@num(rotation.get_at(2)),
+			(float)@num(rotation.get_at(3))
 		};
 	}
 
 	if (try scale)
 	{
-		self.scale = { (float)scale.get_at(0).f, (float)scale.get_at(1).f, (float)scale.get_at(2).f };
+		self.scale = { (float)@num(scale.get_at(0)), (float)@num(scale.get_at(1)), (float)@num(scale.get_at(2)) };
 		assert (self.scale.x > 0 && self.scale.y > 0
 			&& self.scale.z > 0 , "Don't use negative scale value, it can break stuff at %s %s" , self.scale, self.name);
 	}
 
 	if (try translation)
 	{
-		float x = (float)translation.get_at(0).f;
-		float y = (float)translation.get_at(1).f;
-		float z = (float)translation.get_at(2).f;
+		float x = (float)@num(translation.get_at(0));
+		float y = (float)@num(translation.get_at(1));
+		float z = (float)@num(translation.get_at(2));
 		self.translation = { x, y, z };
 	}
 
 	if (try matrix)
 	{
-		foreach (index, value : matrix.array) self.matrix.m[index] = (float)value.f;
+		foreach (index, value : matrix.array) self.matrix.m[index] = (float)@num(value);
 	}
 
 	if (try children)
 	{
-		foreach (node : children.array) self.children.push((uint)node.f);
+		foreach (node : children.array) self.children.push((uint)@num(node));
 	}
 }
 
@@ -635,7 +644,7 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 	if (try name) self.name = name.copy(mem);
 	if (try weights)
 	{
-		foreach (weight : weights.array) self.weights.push((float)weight.f);
+		foreach (weight : weights.array) self.weights.push((float)@num(weight));
 	}
 
 	if (try primitives)
@@ -661,7 +670,7 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 			{
 				attributes.map.@each(; String key, Object* val)
 				{
-					data.attributes[key] = (sz)val.f;
+					data.attributes[key] = (sz)@num(val);
 				};
 			}
 
@@ -673,7 +682,7 @@ fn void Mesh.from_json(&self, Object* json, Allocator allocator)
 					target_attibutes.init(allocator);
 					target.map.@each(; String key, Object* val)
 					{
-						target_attibutes[key] = (sz)val.f;
+						target_attibutes[key] = (sz)@num(val);
 					};
 					data.targets.push(target_attibutes);
 				}
@@ -805,12 +814,12 @@ fn void Accessor.from_json(&self, Object* json)
 
 		if (try max)
 		{
-			foreach (i, value : max.array) self.max[i] = (float)value.f;
+			foreach (i, value : max.array) self.max[i] = (float)@num(value);
 		}
 
 		if (try min)
 		{
-			foreach (i, value : min.array) self.min[i] = (float)value.f;
+			foreach (i, value : min.array) self.min[i] = (float)@num(value);
 		}
 	}
 }
@@ -1001,9 +1010,9 @@ fn void? Material.from_json(&self, Object* json, Gltf data)
 	if (try emissiveFactor)
 	{
 		self.emissiveFactor = {
-			(float)emissiveFactor.get_at(0).f,
-			(float)emissiveFactor.get_at(1).f,
-			(float)emissiveFactor.get_at(2).f,
+			(float)@num(emissiveFactor.get_at(0)),
+			(float)@num(emissiveFactor.get_at(1)),
+			(float)@num(emissiveFactor.get_at(2)),
 			1.0
 		};
 	}
@@ -1050,10 +1059,10 @@ fn void? Material.from_json(&self, Object* json, Gltf data)
 		if (try baseColorFactor)
 		{
 			self.baseColorFactor = {
-				(float)baseColorFactor.get_at(0).f,
-				(float)baseColorFactor.get_at(1).f,
-				(float)baseColorFactor.get_at(2).f,
-				(float)baseColorFactor.get_at(3).f
+				(float)@num(baseColorFactor.get_at(0)),
+				(float)@num(baseColorFactor.get_at(1)),
+				(float)@num(baseColorFactor.get_at(2)),
+				(float)@num(baseColorFactor.get_at(3))
 			};
 		}
 	}
@@ -1123,8 +1132,8 @@ fn TextureInfo TextureInfo.from_json(&self, Object* data)
 		Object*? offset = extension.get("offset");
 		Object*? scale = extension.get("scale");
 
-		if (try offset) info.offset = { (float)offset.get_at(0).f, (float)offset.get_at(1).f };
-		if (try scale) info.scale = { (float)scale.get_at(0).f, (float)scale.get_at(1).f };
+		if (try offset) info.offset = { (float)@num(offset.get_at(0)), (float)@num(offset.get_at(1)) };
+		if (try scale) info.scale = { (float)@num(scale.get_at(0)), (float)@num(scale.get_at(1)) };
 
 		info.rotation = (float)extension.get_float("rotation") ?? 0.0;
 	};
@@ -1306,7 +1315,7 @@ fn void Skin.from_json(&self, Object* json, Allocator allocator)
 	if (try inverseBindMatrices) self.inverseBindAccessor = (uint)inverseBindMatrices;
 	if (try joints)
 	{
-		foreach (joint : joints.array) self.joints.push((uint)joint.f);
+		foreach (joint : joints.array) self.joints.push((uint)@num(joint));
 	}
 }
 
@@ -1330,7 +1339,7 @@ fn void Light.from_json(&self, Object* json)
 	// if (try name) self.name = name.copy(mem);
 	if (try color)
 	{
-		self.color = { (float)color.get_at(0).f, (float)color.get_at(1).f, (float)color.get_at(2).f };
+		self.color = { (float)@num(color.get_at(0)), (float)@num(color.get_at(1)), (float)@num(color.get_at(2)) };
 	}
 
 	if (try intensity) self.intensity = intensity;

@@ -153,7 +153,7 @@ fn Collider Collider.from_json(self, Object* json, bool is_trigger = false, Allo
 	// Parse compound trigger nodes
 	if (try nodes)
 	{
-		foreach (node : nodes.array) self.nodes.push((uint)node.f);
+		foreach (node : nodes.array) self.nodes.push((uint)@num(node));
 	}
 
 	return self;
@@ -176,7 +176,7 @@ fn Motion Motion.from_json(self, Object* json)
 	{
 		foreach (sz i, mass : center_mass.array)
 		{
-			self.mass_center[i] = (float)mass.f;
+			self.mass_center[i] = (float)@num(mass);
 		}
 	}
 
@@ -184,7 +184,7 @@ fn Motion Motion.from_json(self, Object* json)
 	{
 		foreach (sz i, inertia : inertia_diagonal.array)
 		{
-			self.inertia_diagonal[i] = (float)inertia.f;
+			self.inertia_diagonal[i] = (float)@num(inertia);
 		}
 	}
 
@@ -192,7 +192,7 @@ fn Motion Motion.from_json(self, Object* json)
 	{
 		foreach (sz i, inertia : inertia_orientation.array)
 		{
-			self.inertia_orientation.v[i] = (float)inertia.f;
+			self.inertia_orientation.v[i] = (float)@num(inertia);
 		}
 	}
 
@@ -200,7 +200,7 @@ fn Motion Motion.from_json(self, Object* json)
 	{
 		foreach (sz i, velocity : linear_velocity.array)
 		{
-			self.linear_velocity[i] = (float)velocity.f;
+			self.linear_velocity[i] = (float)@num(velocity);
 		}
 	}
 
@@ -208,7 +208,7 @@ fn Motion Motion.from_json(self, Object* json)
 	{
 		foreach (sz i, velocity : angular_velocity.array)
 		{
-			self.angular_velocity[i] = (float)velocity.f;
+			self.angular_velocity[i] = (float)@num(velocity);
 		}
 	}
 
@@ -278,9 +278,9 @@ fn Shape Shape.from_json(self, Object* json)
 						.size = @ok(
 							size
 						) ? {
-							(float)size.get_at(0).f!!,
-							(float)size.get_at(1).f!!,
-							(float)size.get_at(2).f!!
+							(float)@num(size.get_at(0)!!),
+							(float)@num(size.get_at(1)!!),
+							(float)@num(size.get_at(2)!!)
 						} : { 0, 0, 0 }
 					};
 				}
@@ -406,14 +406,14 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json, Allocator allocator =
 			if (try linear_axes && linear_axes.array.len() > 0)
 			{
 				Limit linear_limit = joint_limit;
-				foreach (axis : linear_axes.array) set_limit_axis(&linear_limit, axis.f);
+				foreach (axis : linear_axes.array) set_limit_axis(&linear_limit, @num(axis));
 				self.linear_limits.push(linear_limit);
 			}
 
 			if (try angular_axes && angular_axes.array.len() > 0)
 			{
 				Limit angular_limit = joint_limit;
-				foreach (axis : angular_axes.array) set_limit_axis(&angular_limit, axis.f);
+				foreach (axis : angular_axes.array) set_limit_axis(&angular_limit, @num(axis));
 				self.angular_limits.push(angular_limit);
 			}
 		}

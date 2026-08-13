@@ -202,10 +202,10 @@ fn MaterialLayer parse_layer(Object* json, Gltf* data) @private
 		if (try baseColorFactor)
 		{
 			layer.baseColorFactor = {
-				(float)baseColorFactor.get_at(0).f,
-				(float)baseColorFactor.get_at(1).f,
-				(float)baseColorFactor.get_at(2).f,
-				(float)baseColorFactor.get_at(3).f
+				(float)@num(baseColorFactor.get_at(0)),
+				(float)@num(baseColorFactor.get_at(1)),
+				(float)@num(baseColorFactor.get_at(2)),
+				(float)@num(baseColorFactor.get_at(3))
 			};
 		}
 		layer.metallicFactor = (float)pbr.get_float("metallicFactor") ?? 1.0;
@@ -222,9 +222,9 @@ fn MaterialLayer parse_layer(Object* json, Gltf* data) @private
 	if (try emissiveFactor)
 	{
 		layer.emissiveFactor = {
-			(float)emissiveFactor.get_at(0).f,
-			(float)emissiveFactor.get_at(1).f,
-			(float)emissiveFactor.get_at(2).f
+			(float)@num(emissiveFactor.get_at(0)),
+			(float)@num(emissiveFactor.get_at(1)),
+			(float)@num(emissiveFactor.get_at(2))
 		};
 	}
 	layer.emissiveTexture = layer_texture(json.get("emissiveTexture"), data) ?? default_layer_texture();
@@ -237,9 +237,9 @@ fn MaterialLayer parse_layer(Object* json, Gltf* data) @private
 		if (try radius)
 		{
 			layer.subsurface.radius = {
-				(float)radius.get_at(0).f,
-				(float)radius.get_at(1).f,
-				(float)radius.get_at(2).f
+				(float)@num(radius.get_at(0)),
+				(float)@num(radius.get_at(1)),
+				(float)@num(radius.get_at(2))
 			};
 		}
 	}
