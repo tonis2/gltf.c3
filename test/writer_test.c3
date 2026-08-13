@@ -18,6 +18,8 @@ const float EPSILON = 0.0001;
 // A macro, not a function: every fn in an @test module is collected as a test.
 macro bool near(float a, float b) => math::abs(a - b) < EPSILON;
 
+macro bool is_set(Vec3 value) => value.x != 0 || value.y != 0 || value.z != 0;
+
 macro usz count_of(String haystack, String needle) {
     usz found = 0;
     usz at = 0;
@@ -599,4 +601,273 @@ fn void test_no_extras_writes_no_object() {
     defer json.free();
 
     assert(!json.str_view().contains(`"extras"`));
+}
+
+// --- Physics ---
+
+fn void test_write_physics() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    // Two shapes, so the index a collider names has to be the right one rather
+    // than the only one.
+    uint sphere = builder.add_shape({ .type = SPHERE, .radius = 0.4 });
+    uint capsule = builder.add_shape({
+        .type = CAPSULE,
+        .height = 1.2,
+        .radius_bottom = 0.25,
+        .radius_top = 0.3,
+    });
+
+    // AVERAGE is the zero value of PhysicsCombine and the parser's default is
+    // MULTIPLY, so a material that does not write its combine rules out loud
+    // reads back as a different material.
+    uint material = builder.add_physics_material({
+        .static_friction = 0.6,
+        .dynamic_friction = 0.4,
+        .restitution = 0.2,
+        .friction_combine = AVERAGE,
+        .restitution_combine = MINIMUM,
+    });
+
+    CollisionFilter filter;
+    filter.systems.init(mem);
+    filter.colliding_with.init(mem);
+    filter.not_colliding.init(mem);
+    defer filter.free();
+    filter.systems.push("limbs");
+    filter.colliding_with.push("ground");
+    filter.colliding_with.push("props");
+    filter.not_colliding.push("limbs");
+    uint filter_index = builder.add_collision_filter(filter);
+
+    PhysicsJoint settings;
+    settings.angular_limits.init(mem);
+    settings.linear_limits.init(mem);
+    settings.drives.init(mem);
+    defer settings.free();
+    settings.angular_limits.push({ .axes = { 0, 1, 1 }, .min = -0.4, .max = 0.4 });
+    uint joint_settings = builder.add_physics_joint_settings(settings);
+
+    uint pelvis = builder.add_node("pelvis");
+    uint thigh = builder.add_node("thigh", translation: { 0, -0.5, 0 });
+    uint sensor = builder.add_node("sensor", translation: { 0, -1.2, 0 });
+    builder.add_child(pelvis, thigh);
+    builder.add_child(pelvis, sensor);
+    builder.add_root(pelvis);
+
+    builder.add_motion(pelvis, {
+        .mass = 12.5,
+        .gravity_factor = 0.8,
+        .linear_dampening = 0.05,
+        .angular_dampening = 0.1,
+        .mass_center = { 0, 0.1, 0 },
+        .inertia_diagonal = { 0.3, 0.2, 0.3 },
+        .inertia_orientation = { 0, 0, 0, 1 },
+        .angular_velocity = { 1, 0, 0 },
+    });
+
+    builder.add_collider(thigh, {
+        .shape = (int)capsule,
+        .node = -1,
+        .material = (int)material,
+        .collision_filter = (int)filter_index,
+        .mesh = -1,
+        .base_node = -1,
+    });
+
+    // The same object under a different key: a trigger reports overlaps rather
+    // than resisting them, and the parser tells the two apart by the key alone.
+    builder.add_collider(sensor, {
+        .shape = (int)sphere,
+        .node = -1,
+        .material = -1,
+        .collision_filter = -1,
+        .mesh = -1,
+        .base_node = -1,
+        .is_trigger = true,
+    });
+
+    builder.add_node_joint(thigh, pelvis, joint_settings, enable_collision: true);
+
+    // Named once each, however many objects use them.
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(count_of(json.str_view(), `"extensionsUsed"`) == 1);
+    assert(json.str_view().contains(`"extensionsUsed":["KHR_implicit_shapes","KHR_physics_rigid_bodies"]`),
+        "both extensions have to be declared, and each only once");
+
+    builder.save_glb("test/out_physics.glb")!!;
+    defer (void)file::delete("test/out_physics.glb");
+
+    GltfStream stream = gltf::open("test/out_physics.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.shapes.len() == 2);
+    Shape capsule_back = stream.gltf.shapes[capsule];
+    assert(capsule_back.type == ShapeType.CAPSULE);
+    assert(near(capsule_back.height, 1.2));
+    assert(near(capsule_back.radius_bottom, 0.25));
+    assert(near(capsule_back.radius_top, 0.3));
+    assert(stream.gltf.shapes[sphere].type == ShapeType.SPHERE);
+    assert(near(stream.gltf.shapes[sphere].radius, 0.4));
+
+    assert(stream.gltf.physics_materials.len() == 1);
+    PhysicsMaterial material_back = stream.gltf.physics_materials[material];
+    assert(near(material_back.static_friction, 0.6));
+    assert(near(material_back.dynamic_friction, 0.4));
+    assert(near(material_back.restitution, 0.2));
+    assert(material_back.friction_combine == PhysicsCombine.AVERAGE);
+    assert(material_back.restitution_combine == PhysicsCombine.MINIMUM);
+
+    assert(stream.gltf.collision_filters.len() == 1);
+    CollisionFilter filter_back = stream.gltf.collision_filters[filter_index];
+    assert(filter_back.systems.len() == 1 && filter_back.systems[0] == "limbs");
+    assert(filter_back.colliding_with.len() == 2);
+    assert(filter_back.colliding_with[0] == "ground" && filter_back.colliding_with[1] == "props");
+    assert(filter_back.not_colliding.len() == 1 && filter_back.not_colliding[0] == "limbs");
+
+    Node pelvis_back = stream.gltf.nodes[pelvis];
+    assert(pelvis_back.has_motion());
+    Motion motion_back = stream.gltf.motions[(uint)pelvis_back.motion];
+    assert(near(motion_back.mass, 12.5));
+    assert(near(motion_back.gravity_factor, 0.8));
+    assert(near(motion_back.linear_dampening, 0.05));
+    assert(near(motion_back.angular_dampening, 0.1));
+    assert(!motion_back.is_kinematic);
+    assert(near(motion_back.mass_center.y, 0.1));
+    assert(near(motion_back.inertia_diagonal.x, 0.3) && near(motion_back.inertia_diagonal.y, 0.2));
+    assert(near(motion_back.inertia_orientation.v[3], 1.0));
+    assert(near(motion_back.angular_velocity.x, 1.0));
+    assert(!is_set(motion_back.linear_velocity), "a velocity nobody set must not arrive as one");
+
+    Node thigh_back = stream.gltf.nodes[thigh];
+    assert(thigh_back.has_collider());
+    Collider collider_back = stream.gltf.colliders[(uint)thigh_back.collider];
+    assert(collider_back.shape == (int)capsule);
+    assert(collider_back.material == (int)material);
+    assert(collider_back.collision_filter == (int)filter_index);
+    assert(!collider_back.is_trigger);
+    assert(!collider_back.convex_hull);
+    assert(collider_back.base_node == (int)thigh);
+
+    Node sensor_back = stream.gltf.nodes[sensor];
+    assert(sensor_back.has_collider());
+    Collider trigger_back = stream.gltf.colliders[(uint)sensor_back.collider];
+    assert(trigger_back.is_trigger, "a trigger written under 'collider' would resist instead of report");
+    assert(trigger_back.shape == (int)sphere);
+    assert(!trigger_back.has_material() && !trigger_back.has_filter());
+
+    // The joint hangs on one of the two bodies and names the other.
+    assert(thigh_back.has_joint());
+    assert(thigh_back.joint == (int)joint_settings);
+    assert(thigh_back.connected_node == (int)pelvis);
+    assert(thigh_back.enable_collision);
+    assert(!pelvis_back.has_joint(), "the joint is written once, not from both ends");
+}
+
+// A limit over two axes is a cone, and the two things that could quietly turn
+// it into a pair of hinges are the writer splitting the mask and the parser
+// splitting the array.
+fn void test_joint_limits_and_drives() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    PhysicsJoint settings;
+    settings.angular_limits.init(mem);
+    settings.linear_limits.init(mem);
+    settings.drives.init(mem);
+    defer settings.free();
+
+    // Locked: the bodies stay coincident. Both bounds are zero, which is the
+    // case an "omit what is zero" writer loses — an absent bound reads as free.
+    settings.linear_limits.push({ .axes = { 1, 1, 1 }, .min = 0, .max = 0 });
+    settings.angular_limits.push({ .axes = { 0, 1, 1 }, .min = -0.4, .max = 0.4, .stiffness = 90, .damping = 4 });
+    settings.drives.push({
+        .type = ANGULAR,
+        .drive = FORCE,
+        .axis = 1,
+        .position_target = 0.35,
+        .velocity_target = 0.1,
+        .max_force = 25,
+        .stiffness = 120,
+        .damping = 8,
+    });
+
+    uint joint_settings = builder.add_physics_joint_settings(settings);
+    uint anchor = builder.add_node("anchor");
+    uint swing = builder.add_node("swing");
+    builder.add_child(anchor, swing);
+    builder.add_root(anchor);
+    builder.add_node_joint(swing, anchor, joint_settings);
+
+    // Checked in the text as well: one array holding both axes is what makes it
+    // a cone, and a parser that merges two entries back into one mask would
+    // hide a writer that split them.
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(json.str_view().contains(`"angularAxes":[1,2]`), "the cone's axes belong to one limit");
+    assert(count_of(json.str_view(), `"angularAxes"`) == 1);
+    assert(json.str_view().contains(`"linearAxes":[0,1,2],"min":0,"max":0`), "a locked axis has to say so");
+
+    builder.save_glb("test/out_joint.glb")!!;
+    defer (void)file::delete("test/out_joint.glb");
+
+    GltfStream stream = gltf::open("test/out_joint.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.physics_joints.len() == 1);
+    PhysicsJoint back = stream.gltf.physics_joints[joint_settings];
+
+    assert(back.angular_limits.len() == 1, "two angular axes are one cone, not two hinges");
+    Limit cone = back.angular_limits[0];
+    assert(cone.axes.x == 0 && cone.axes.y == 1 && cone.axes.z == 1);
+    assert(near(cone.min, -0.4) && near(cone.max, 0.4));
+    assert(near(cone.stiffness, 90) && near(cone.damping, 4));
+
+    assert(back.linear_limits.len() == 1);
+    Limit locked = back.linear_limits[0];
+    assert(locked.axes.x == 1 && locked.axes.y == 1 && locked.axes.z == 1);
+    assert(locked.min == 0 && locked.max == 0);
+    assert(locked.stiffness == 0 && locked.damping == 0);
+
+    assert(back.drives.len() == 1);
+    Drive drive = back.drives[0];
+    assert(drive.type == DriveType.ANGULAR);
+    assert(drive.drive == DriveMode.FORCE);
+    assert(drive.axis == 1);
+    assert(near(drive.position_target, 0.35));
+    assert(near(drive.velocity_target, 0.1));
+    assert(near(drive.max_force, 25));
+    assert(near(drive.stiffness, 120));
+    assert(near(drive.damping, 8));
+}
+
+// The parser fills an absent mass with 1 and absent damping with 0.9, so a body
+// that really is massless and undamped only survives if those are written.
+fn void test_motion_zero_survives_parser_defaults() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    uint node = builder.add_node("ghost");
+    builder.add_root(node);
+
+    Motion still;
+    still.is_kinematic = true;
+    builder.add_motion(node, still);
+
+    builder.save_glb("test/out_motion.glb")!!;
+    defer (void)file::delete("test/out_motion.glb");
+
+    GltfStream stream = gltf::open("test/out_motion.glb")!!;
+    defer stream.close();
+
+    Motion back = stream.gltf.motions[(uint)stream.gltf.nodes[node].motion];
+    assert(back.is_kinematic);
+    assert(back.mass == 0);
+    assert(back.gravity_factor == 0);
+    assert(back.linear_dampening == 0);
+    assert(back.angular_dampening == 0);
+    assert(!is_set(back.mass_center) && !is_set(back.inertia_diagonal));
+    assert(!is_set(back.linear_velocity) && !is_set(back.angular_velocity));
 }

@@ -139,6 +139,50 @@ fn String AnimationProperty.gltf_name(self)
 	}
 }
 
+// The spellings Shape.from_json decodes. A shape names its kind twice — once
+// as "type" and once as the object its dimensions live in — so this is both.
+fn String ShapeType.gltf_name(self)
+{
+	switch (self)
+	{
+		case BOX:      return "box";
+		case CAPSULE:  return "capsule";
+		case CYLINDER: return "cylinder";
+		case SPHERE:   return "sphere";
+	}
+}
+
+// The spellings PhysicsMaterial.from_json decodes.
+fn String PhysicsCombine.gltf_name(self)
+{
+	switch (self)
+	{
+		case AVERAGE:  return "average";
+		case MINIMUM:  return "minimum";
+		case MAXIMUM:  return "maximum";
+		case MULTIPLY: return "multiply";
+	}
+}
+
+// The spellings PhysicsJoint.from_json decodes for a drive.
+fn String DriveType.gltf_name(self)
+{
+	switch (self)
+	{
+		case ANGULAR: return "angular";
+		case LINEAR:  return "linear";
+	}
+}
+
+fn String DriveMode.gltf_name(self)
+{
+	switch (self)
+	{
+		case FORCE:        return "force";
+		case ACCELERATION: return "acceleration";
+	}
+}
+
 <*
  One named vertex attribute of a primitive: "POSITION", "JOINTS_0", and so on.
 
@@ -174,7 +218,28 @@ struct WriteNode
 	Quaternionf rotation;
 	int mesh;
 	int skin;
+	int physics;
 	List{uint} children;
+}
+
+<*
+ The KHR_physics_rigid_bodies object hanging off one node: what the node is as
+ a rigid body, what shape it collides with, and what it is jointed to.
+
+ A node holds at most one collider. The parser keeps a single collider index
+ per node and reads "collider" and "trigger" into the same slot, so writing
+ both would produce a file that reads back as the trigger alone.
+*>
+struct WriteNodePhysics
+{
+	bool has_collider;
+	bool has_motion;
+	bool has_joint;
+	Collider collider;
+	Motion motion;
+	uint connected_node;
+	uint joint;
+	bool enable_collision;
 }
 
 struct WriteSkin
@@ -250,6 +315,13 @@ struct GltfBuilder
 	List{WriteAnimation} animations;
 	List{WriteExtra} extras;
 	List{uint} roots;
+
+	List{Shape} shapes;
+	List{PhysicsMaterial} physics_materials;
+	List{CollisionFilter} collision_filters;
+	List{PhysicsJoint} physics_joints;
+	List{WriteNodePhysics} node_physics;
+
 	String generator;
 }
 
@@ -269,6 +341,11 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.animations.init(allocator);
 	self.extras.init(allocator);
 	self.roots.init(allocator);
+	self.shapes.init(allocator);
+	self.physics_materials.init(allocator);
+	self.collision_filters.init(allocator);
+	self.physics_joints.init(allocator);
+	self.node_physics.init(allocator);
 	self.generator = "gltf.c3";
 	return self;
 }
@@ -319,6 +396,32 @@ fn void GltfBuilder.free(&self)
 		extra.value.free(self.allocator);
 	}
 	self.extras.free();
+
+	// Freed here rather than through CollisionFilter.free: a filter the parser
+	// produced holds names on the heap, while these were copied with whatever
+	// allocator the builder was given.
+	foreach (filter : self.collision_filters)
+	{
+		foreach (system : filter.systems) system.free(self.allocator);
+		foreach (system : filter.colliding_with) system.free(self.allocator);
+		foreach (system : filter.not_colliding) system.free(self.allocator);
+		filter.systems.free();
+		filter.colliding_with.free();
+		filter.not_colliding.free();
+	}
+	self.collision_filters.free();
+
+	foreach (joint : self.physics_joints) joint.free();
+	self.physics_joints.free();
+
+	foreach (physics : self.node_physics)
+	{
+		if (physics.has_collider) physics.collider.free();
+	}
+	self.node_physics.free();
+
+	self.physics_materials.free();
+	self.shapes.free();
 
 	self.roots.free();
 }
@@ -655,6 +758,7 @@ fn uint GltfBuilder.add_node(&self, String name, int mesh = -1, int skin = -1,
 	node.scale = scale;
 	node.mesh = mesh;
 	node.skin = skin;
+	node.physics = -1;
 	node.children.init(self.allocator);
 	self.nodes.push(node);
 	return (uint)self.nodes.len() - 1;
@@ -764,6 +868,178 @@ fn void GltfBuilder.set_extra(&self, String key, String value)
 	self.extras.push({ .key = key.copy(self.allocator), .value = value.copy(self.allocator) });
 }
 
+// --- Physics ---
+//
+// KHR_implicit_shapes and KHR_physics_rigid_bodies, written as the parser in
+// rigid_bodies.c3 reads them. The document-level arrays — shapes, materials,
+// filters and joint settings — are built first and referenced by index; what
+// hangs off a node is the collider, the motion and the joint binding it to
+// another body.
+//
+// These write more explicitly than the rest of the writer does. A shape's
+// dimensions, a motion's mass and damping and a material's combine rules all
+// have non-zero defaults in the spec or in the parser, so omitting a field
+// because it happens to be zero would read back as a different value; only
+// fields whose absence the parser reads back as the value that was given are
+// left out.
+
+<*
+ Register an implicit shape — the collision volume colliders refer to by index.
+
+ @return `The shape index, to pass to add_collider as Collider.shape.`
+*>
+fn uint GltfBuilder.add_shape(&self, Shape shape)
+{
+	self.shapes.push(shape);
+	return (uint)self.shapes.len() - 1;
+}
+
+<*
+ Register a physics material — the friction and restitution a collider's
+ surface answers a contact with.
+
+ @return `The physicsMaterials index, for Collider.material.`
+*>
+fn uint GltfBuilder.add_physics_material(&self, PhysicsMaterial material)
+{
+	self.physics_materials.push(material);
+	return (uint)self.physics_materials.len() - 1;
+}
+
+<*
+ Register a collision filter — the systems a collider belongs to, and the ones
+ it does and does not collide with.
+
+ The system names are copied, so the lists handed in can be temporary.
+
+ @return `The collisionFilters index, for Collider.collision_filter.`
+*>
+fn uint GltfBuilder.add_collision_filter(&self, CollisionFilter filter)
+{
+	CollisionFilter copy;
+	copy.systems.init(self.allocator);
+	copy.colliding_with.init(self.allocator);
+	copy.not_colliding.init(self.allocator);
+
+	foreach (system : filter.systems) copy.systems.push(system.copy(self.allocator));
+	foreach (system : filter.colliding_with) copy.colliding_with.push(system.copy(self.allocator));
+	foreach (system : filter.not_colliding) copy.not_colliding.push(system.copy(self.allocator));
+
+	self.collision_filters.push(copy);
+	return (uint)self.collision_filters.len() - 1;
+}
+
+<*
+ Register the settings a joint constrains its two bodies by — its limits and
+ its drives. Several joints may share one entry, which is what lets a rig
+ describe a kind of joint once and use it on every limb.
+
+ A limit is one entry per mask, not one per axis: a limit naming two angular
+ axes constrains the angle between them as a cone, and splitting it into two
+ hinges is a different constraint. Limits with an empty mask constrain nothing
+ and are dropped.
+
+ The limits and drives are copied, so the lists handed in can be freed straight
+ after.
+
+ @return `The physicsJoints index, to pass to add_node_joint.`
+*>
+fn uint GltfBuilder.add_physics_joint_settings(&self, PhysicsJoint joint)
+{
+	PhysicsJoint copy;
+	copy.angular_limits.init(self.allocator);
+	copy.linear_limits.init(self.allocator);
+	copy.drives.init(self.allocator);
+
+	foreach (limit : joint.angular_limits) copy.angular_limits.push(limit);
+	foreach (limit : joint.linear_limits) copy.linear_limits.push(limit);
+	foreach (drive : joint.drives) copy.drives.push(drive);
+
+	self.physics_joints.push(copy);
+	return (uint)self.physics_joints.len() - 1;
+}
+
+// The node's physics object, created on first use. A node with nothing
+// physical about it carries no extensions object at all, so the slot stays -1
+// until something is attached to it.
+fn WriteNodePhysics* node_physics_ref(GltfBuilder* builder, uint node) @private
+{
+	WriteNode* target = builder.nodes.get_ref(node);
+	if (target.physics < 0)
+	{
+		WriteNodePhysics fresh;
+		builder.node_physics.push(fresh);
+		target.physics = (int)builder.node_physics.len() - 1;
+	}
+	return builder.node_physics.get_ref((uint)target.physics);
+}
+
+<*
+ Give a node a collider: the geometry it collides with, and optionally the
+ material and filter that decide how.
+
+ A collider with `is_trigger` set is written as a trigger instead — a volume
+ that reports overlaps rather than resisting them.
+
+ Absent references are -1, not 0. A zeroed Collider names shape 0, material 0
+ and filter 0, so build one by naming every field it needs and setting the rest
+ to -1, the way Collider.from_json leaves them.
+
+ Geometry is an implicit shape, or another node whose mesh is the collision
+ geometry, or neither — in which case the collider is the node's own mesh, and
+ the node had better have one, since that is the only case the parser refuses.
+
+ A node holds one collider, so calling this twice replaces the first rather
+ than giving the node two.
+
+ @param node : `Index returned by add_node.`
+*>
+fn void GltfBuilder.add_collider(&self, uint node, Collider collider)
+{
+	WriteNodePhysics* physics = node_physics_ref(self, node);
+	if (physics.has_collider) physics.collider.free();
+	physics.has_collider = true;
+	physics.collider = collider;
+
+	// The compound trigger list is copied, so the caller's can be temporary.
+	physics.collider.nodes.init(self.allocator);
+	foreach (child : collider.nodes) physics.collider.nodes.push(child);
+}
+
+<*
+ Make a node a rigid body: something with mass that the simulation moves,
+ rather than a fixture the world is nailed to.
+
+ @param node : `Index returned by add_node.`
+*>
+fn void GltfBuilder.add_motion(&self, uint node, Motion motion)
+{
+	WriteNodePhysics* physics = node_physics_ref(self, node);
+	physics.has_motion = true;
+	physics.motion = motion;
+}
+
+<*
+ Joint this node's body to another, constrained by settings registered with
+ add_physics_joint_settings.
+
+ The joint lives on one of the two bodies and names the other, so it is written
+ once rather than from both ends.
+
+ @param node : `Index returned by add_node — the body the joint hangs on.`
+ @param connected_node : `The node holding the body at the joint's other end.`
+ @param joint_settings : `Index returned by add_physics_joint_settings.`
+ @param enable_collision : `Whether the two jointed bodies still collide with each other.`
+*>
+fn void GltfBuilder.add_node_joint(&self, uint node, uint connected_node, uint joint_settings, bool enable_collision = false)
+{
+	WriteNodePhysics* physics = node_physics_ref(self, node);
+	physics.has_joint = true;
+	physics.connected_node = connected_node;
+	physics.joint = joint_settings;
+	physics.enable_collision = enable_collision;
+}
+
 // --- JSON ---
 
 fn void append_json_string(DString* out, String value) @private
@@ -831,6 +1107,347 @@ fn void append_json_uints(DString* out, List{uint}* values) @private
 	out.append_char(']');
 }
 
+fn void append_json_strings(DString* out, List{String}* values) @private
+{
+	out.append_char('[');
+	foreach (i, value : *values)
+	{
+		if (i > 0) out.append_char(',');
+		append_json_string(out, value);
+	}
+	out.append_char(']');
+}
+
+fn void append_json_vec3(DString* out, Vec3 value) @private
+{
+	float[3] values = { value.x, value.y, value.z };
+	append_json_floats(out, values[..]);
+}
+
+fn bool is_nonzero(Vec3 value) @private => value.x != 0 || value.y != 0 || value.z != 0;
+
+// --- Physics JSON ---
+
+fn void append_shape_json(DString* out, Shape shape) @private
+{
+	out.append_string(`{"type":`);
+	append_json_string(out, shape.type.gltf_name());
+	out.append_char(',');
+	append_json_string(out, shape.type.gltf_name());
+	out.append_string(":{");
+
+	switch (shape.type)
+	{
+		case BOX:
+			out.append_string(`"size":`);
+			append_json_vec3(out, shape.size);
+		case SPHERE:
+			out.append_string(`"radius":`);
+			append_json_float(out, shape.radius);
+		case CAPSULE:
+		case CYLINDER:
+			out.append_string(`"height":`);
+			append_json_float(out, shape.height);
+			out.append_string(`,"radiusBottom":`);
+			append_json_float(out, shape.radius_bottom);
+			out.append_string(`,"radiusTop":`);
+			append_json_float(out, shape.radius_top);
+	}
+
+	out.append_string("}}");
+}
+
+fn void append_physics_material_json(DString* out, PhysicsMaterial material) @private
+{
+	out.append_string(`{"staticFriction":`);
+	append_json_float(out, material.static_friction);
+	out.append_string(`,"dynamicFriction":`);
+	append_json_float(out, material.dynamic_friction);
+	out.append_string(`,"restitution":`);
+	append_json_float(out, material.restitution);
+	// Both combine rules are always written: the parser defaults them to
+	// multiply and maximum, so an average — which is what a zeroed struct says
+	// — would read back as neither.
+	out.append_string(`,"frictionCombine":`);
+	append_json_string(out, material.friction_combine.gltf_name());
+	out.append_string(`,"restitutionCombine":`);
+	append_json_string(out, material.restitution_combine.gltf_name());
+	out.append_char('}');
+}
+
+fn void append_collision_filter_json(DString* out, CollisionFilter filter) @private
+{
+	out.append_char('{');
+	bool first = true;
+
+	if (filter.systems.len() > 0)
+	{
+		out.append_string(`"collisionSystems":`);
+		append_json_strings(out, &filter.systems);
+		first = false;
+	}
+	if (filter.colliding_with.len() > 0)
+	{
+		if (!first) out.append_char(',');
+		out.append_string(`"collideWithSystems":`);
+		append_json_strings(out, &filter.colliding_with);
+		first = false;
+	}
+	if (filter.not_colliding.len() > 0)
+	{
+		if (!first) out.append_char(',');
+		out.append_string(`"notCollideWithSystems":`);
+		append_json_strings(out, &filter.not_colliding);
+	}
+
+	out.append_char('}');
+}
+
+<*
+ One limit, over every axis its mask names.
+
+ Written as a single entry rather than one per axis, because a limit spanning
+ several axes constrains the length of the vector across them — two angular
+ axes are a cone, not two independent hinges — and splitting it would change
+ what the file says.
+
+ min and max are always written. An absent bound means unconstrained, so a
+ locked axis, whose min and max are both zero, would come out free.
+
+ stiffness and damping are left out at zero: a limit with no spring in it is a
+ hard stop, which is what an absent spring already means.
+*>
+fn void append_limit_json(DString* out, Limit limit, String axes_name, bool* first) @private
+{
+	if (!is_nonzero(limit.axes)) return;
+
+	if (!*first) out.append_char(',');
+	*first = false;
+
+	out.append_char('{');
+	append_json_string(out, axes_name);
+	out.append_string(":[");
+	bool axis_first = true;
+	for (uint axis = 0; axis < 3; axis++)
+	{
+		if (limit.axes[axis] == 0) continue;
+		if (!axis_first) out.append_char(',');
+		out.appendf("%d", axis)!!;
+		axis_first = false;
+	}
+	out.append_string(`],"min":`);
+	append_json_float(out, limit.min);
+	out.append_string(`,"max":`);
+	append_json_float(out, limit.max);
+	if (limit.stiffness != 0)
+	{
+		out.append_string(`,"stiffness":`);
+		append_json_float(out, limit.stiffness);
+	}
+	if (limit.damping != 0)
+	{
+		out.append_string(`,"damping":`);
+		append_json_float(out, limit.damping);
+	}
+	out.append_char('}');
+}
+
+fn void append_drive_json(DString* out, Drive drive) @private
+{
+	out.append_string(`{"type":`);
+	append_json_string(out, drive.type.gltf_name());
+	out.append_string(`,"mode":`);
+	append_json_string(out, drive.drive.gltf_name());
+	out.appendf(`,"axis":%d`, drive.axis)!!;
+
+	if (drive.position_target != 0)
+	{
+		out.append_string(`,"positionTarget":`);
+		append_json_float(out, drive.position_target);
+	}
+	if (drive.velocity_target != 0)
+	{
+		out.append_string(`,"velocityTarget":`);
+		append_json_float(out, drive.velocity_target);
+	}
+	// Zero is not a force ceiling anyone means, so it is spelled by leaving the
+	// field out — which the spec reads as unlimited.
+	if (drive.max_force != 0)
+	{
+		out.append_string(`,"maxForce":`);
+		append_json_float(out, drive.max_force);
+	}
+	if (drive.stiffness != 0)
+	{
+		out.append_string(`,"stiffness":`);
+		append_json_float(out, drive.stiffness);
+	}
+	if (drive.damping != 0)
+	{
+		out.append_string(`,"damping":`);
+		append_json_float(out, drive.damping);
+	}
+	out.append_char('}');
+}
+
+fn void append_physics_joint_json(DString* out, PhysicsJoint joint) @private
+{
+	out.append_string(`{"limits":[`);
+	bool first = true;
+	foreach (limit : joint.linear_limits) append_limit_json(out, limit, "linearAxes", &first);
+	foreach (limit : joint.angular_limits) append_limit_json(out, limit, "angularAxes", &first);
+	out.append_char(']');
+
+	if (joint.drives.len() > 0)
+	{
+		out.append_string(`,"drives":[`);
+		foreach (i, drive : joint.drives)
+		{
+			if (i > 0) out.append_char(',');
+			append_drive_json(out, drive);
+		}
+		out.append_char(']');
+	}
+	out.append_char('}');
+}
+
+fn void append_collider_json(DString* out, Collider collider) @private
+{
+	out.append_char('{');
+	bool first = true;
+
+	if (collider.has_shape() || collider.has_node() || collider.convex_hull)
+	{
+		out.append_string(`"geometry":{`);
+		bool geometry_first = true;
+		if (collider.has_shape())
+		{
+			out.appendf(`"shape":%d`, collider.shape)!!;
+			geometry_first = false;
+		}
+		if (collider.has_node())
+		{
+			if (!geometry_first) out.append_char(',');
+			out.appendf(`"node":%d`, collider.node)!!;
+			geometry_first = false;
+		}
+		if (collider.convex_hull)
+		{
+			if (!geometry_first) out.append_char(',');
+			out.append_string(`"convexHull":true`);
+		}
+		out.append_char('}');
+		first = false;
+	}
+
+	if (collider.has_material())
+	{
+		if (!first) out.append_char(',');
+		out.appendf(`"physicsMaterial":%d`, collider.material)!!;
+		first = false;
+	}
+	if (collider.has_filter())
+	{
+		if (!first) out.append_char(',');
+		out.appendf(`"collisionFilter":%d`, collider.collision_filter)!!;
+		first = false;
+	}
+	// Compound triggers name the nodes they are made of.
+	if (collider.nodes.len() > 0)
+	{
+		if (!first) out.append_char(',');
+		out.append_string(`"nodes":`);
+		append_json_uints(out, &collider.nodes);
+	}
+
+	out.append_char('}');
+}
+
+<*
+ A motion's mass, gravity factor and both damping factors are always written.
+ The parser defaults them to 1 and 0.9 rather than to zero, so a body that
+ really is massless or undamped has to say so out loud or read back as
+ something else.
+
+ The vectors are written only when they hold something, which is exactly when
+ the parser reads them back as given: it leaves an absent one alone, and what
+ it leaves alone is zero.
+*>
+fn void append_motion_json(DString* out, Motion motion) @private
+{
+	out.append_string(`{"mass":`);
+	append_json_float(out, motion.mass);
+	out.append_string(`,"gravityFactor":`);
+	append_json_float(out, motion.gravity_factor);
+	out.append_string(`,"linearDamping":`);
+	append_json_float(out, motion.linear_dampening);
+	out.append_string(`,"angularDamping":`);
+	append_json_float(out, motion.angular_dampening);
+
+	if (motion.is_kinematic) out.append_string(`,"isKinematic":true`);
+
+	if (is_nonzero(motion.mass_center))
+	{
+		out.append_string(`,"centerOfMass":`);
+		append_json_vec3(out, motion.mass_center);
+	}
+	if (is_nonzero(motion.inertia_diagonal))
+	{
+		out.append_string(`,"inertiaDiagonal":`);
+		append_json_vec3(out, motion.inertia_diagonal);
+	}
+	Quaternionf orientation = motion.inertia_orientation;
+	if (orientation.v[0] != 0 || orientation.v[1] != 0 || orientation.v[2] != 0 || orientation.v[3] != 0)
+	{
+		out.append_string(`,"inertiaOrientation":`);
+		float[4] values = { orientation.v[0], orientation.v[1], orientation.v[2], orientation.v[3] };
+		append_json_floats(out, values[..]);
+	}
+	if (is_nonzero(motion.linear_velocity))
+	{
+		out.append_string(`,"linearVelocity":`);
+		append_json_vec3(out, motion.linear_velocity);
+	}
+	if (is_nonzero(motion.angular_velocity))
+	{
+		out.append_string(`,"angularVelocity":`);
+		append_json_vec3(out, motion.angular_velocity);
+	}
+	out.append_char('}');
+}
+
+fn void append_node_physics_json(DString* out, WriteNodePhysics physics) @private
+{
+	out.append_char('{');
+	bool first = true;
+
+	if (physics.has_motion)
+	{
+		out.append_string(`"motion":`);
+		append_motion_json(out, physics.motion);
+		first = false;
+	}
+	if (physics.has_collider)
+	{
+		if (!first) out.append_char(',');
+		// A trigger is the same object under a different key — the parser takes
+		// the flag from the key it found it under, not from the object.
+		append_json_string(out, physics.collider.is_trigger ? "trigger" : "collider");
+		out.append_char(':');
+		append_collider_json(out, physics.collider);
+		first = false;
+	}
+	if (physics.has_joint)
+	{
+		if (!first) out.append_char(',');
+		out.appendf(`"joint":{"connectedNode":%d,"joint":%d`, physics.connected_node, physics.joint)!!;
+		if (physics.enable_collision) out.append_string(`,"enableCollision":true`);
+		out.append_char('}');
+	}
+
+	out.append_char('}');
+}
+
 <*
  Serialise the document to glTF JSON. Written to be read back by this
  library's own parser, so nothing is emitted that the parser ignores, and
@@ -846,6 +1463,87 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 	o.append_string(`{"asset":{"version":"2.0","generator":`);
 	append_json_string(o, self.generator);
 	o.append_char('}');
+
+	// An extension is named in extensionsUsed once, however many objects in the
+	// document turn out to use it. KHR_physics_rigid_bodies counts as used by a
+	// node that carries one as much as by a document-level array, since a
+	// collider on a node is the extension too.
+	bool uses_shapes = self.shapes.len() > 0;
+	bool rigid_body_arrays = self.physics_materials.len() > 0 || self.collision_filters.len() > 0
+		|| self.physics_joints.len() > 0;
+	bool uses_rigid_bodies = rigid_body_arrays || self.node_physics.len() > 0;
+
+	if (uses_shapes || uses_rigid_bodies)
+	{
+		o.append_string(`,"extensionsUsed":[`);
+		if (uses_shapes) append_json_string(o, IMPLICIT_SHAPES_EXTENSION);
+		if (uses_shapes && uses_rigid_bodies) o.append_char(',');
+		if (uses_rigid_bodies) append_json_string(o, RIGID_BODIES_EXTENSION);
+		o.append_char(']');
+	}
+
+	if (uses_shapes || rigid_body_arrays)
+	{
+		o.append_string(`,"extensions":{`);
+
+		if (uses_shapes)
+		{
+			append_json_string(o, IMPLICIT_SHAPES_EXTENSION);
+			o.append_string(`:{"shapes":[`);
+			foreach (i, shape : self.shapes)
+			{
+				if (i > 0) o.append_char(',');
+				append_shape_json(o, shape);
+			}
+			o.append_string("]}");
+		}
+
+		if (rigid_body_arrays)
+		{
+			if (uses_shapes) o.append_char(',');
+			append_json_string(o, RIGID_BODIES_EXTENSION);
+			o.append_string(":{");
+			bool first = true;
+
+			if (self.physics_materials.len() > 0)
+			{
+				o.append_string(`"physicsMaterials":[`);
+				foreach (i, material : self.physics_materials)
+				{
+					if (i > 0) o.append_char(',');
+					append_physics_material_json(o, material);
+				}
+				o.append_char(']');
+				first = false;
+			}
+			if (self.collision_filters.len() > 0)
+			{
+				if (!first) o.append_char(',');
+				o.append_string(`"collisionFilters":[`);
+				foreach (i, filter : self.collision_filters)
+				{
+					if (i > 0) o.append_char(',');
+					append_collision_filter_json(o, filter);
+				}
+				o.append_char(']');
+				first = false;
+			}
+			if (self.physics_joints.len() > 0)
+			{
+				if (!first) o.append_char(',');
+				o.append_string(`"physicsJoints":[`);
+				foreach (i, joint : self.physics_joints)
+				{
+					if (i > 0) o.append_char(',');
+					append_physics_joint_json(o, joint);
+				}
+				o.append_char(']');
+			}
+			o.append_char('}');
+		}
+
+		o.append_char('}');
+	}
 
 	if (self.extras.len() > 0)
 	{
@@ -923,6 +1621,16 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				if (!first) o.append_char(',');
 				o.append_string(`"children":`);
 				append_json_uints(o, &node.children);
+				first = false;
+			}
+			if (node.physics >= 0)
+			{
+				if (!first) o.append_char(',');
+				o.append_string(`"extensions":{`);
+				append_json_string(o, RIGID_BODIES_EXTENSION);
+				o.append_char(':');
+				append_node_physics_json(o, self.node_physics[(uint)node.physics]);
+				o.append_char('}');
 			}
 			o.append_char('}');
 		}

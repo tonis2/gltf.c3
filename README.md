@@ -18,7 +18,8 @@ A glTF 2.0 parser and writer for C3 with support for both `.gltf` and `.glb` fil
 * KHR_texture_transform
 * KHR_animation_pointer
 * EXT_mesh_gpu_instancing
-* KHR_physics_rigid_bodies
+* KHR_implicit_shapes (read and write)
+* KHR_physics_rigid_bodies (read and write)
 
 ### Installation
 

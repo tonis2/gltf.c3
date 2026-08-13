@@ -1769,7 +1769,16 @@ fn void Gltf.free(Gltf* self)
 	foreach (scene : self.scenes) scene.free();
 	foreach (animation : self.animations) animation.free();
 	foreach (joint : self.physics_joints) joint.free();
-	foreach (filter : self.collision_filters) filter.free();
+
+	// A filter's system names were copied out of the JSON on the way in — see
+	// CollisionFilter.from_json — so the document owns them, not the filter.
+	foreach (filter : self.collision_filters)
+	{
+		foreach (system : filter.systems) system.free(mem);
+		foreach (system : filter.colliding_with) system.free(mem);
+		foreach (system : filter.not_colliding) system.free(mem);
+		filter.free();
+	}
 	foreach (image : self.images) image.free();
 	foreach (skin : self.skins) skin.free();
 

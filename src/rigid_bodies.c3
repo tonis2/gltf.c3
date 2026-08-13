@@ -230,19 +230,25 @@ fn CollisionFilter CollisionFilter.from_json(self, Object* json, Allocator alloc
 	Object*? collide_with = json.get("collideWithSystems");
 	Object*? not_colliding = json.get("notCollideWithSystems");
 
+	// The names are copied, as Node.from_json copies a node's: the JSON object
+	// they came from is freed as soon as the document is parsed, and a name
+	// kept by pointer would be read back out of freed memory. They belong to
+	// the document from here on, and Gltf.free releases them — not
+	// CollisionFilter.free, which a caller may hold a filter of its own naming
+	// with literals.
 	if (try systems)
 	{
-		foreach (system : systems.array) self.systems.push(system.s);
+		foreach (system : systems.array) self.systems.push(system.s.copy(mem));
 	}
 
 	if (try collide_with)
 	{
-		foreach (system : collide_with.array) self.colliding_with.push(system.s);
+		foreach (system : collide_with.array) self.colliding_with.push(system.s.copy(mem));
 	}
 
 	if (try not_colliding)
 	{
-		foreach (system : not_colliding.array) self.not_colliding.push(system.s);
+		foreach (system : not_colliding.array) self.not_colliding.push(system.s.copy(mem));
 	}
 
 	return self;
@@ -347,6 +353,21 @@ fn Aabb Shape.aabb(self)
 	}
 }
 
+// Name one more axis in a limit's mask. Anything outside 0..2 is not an axis
+// and is left out rather than folded into one.
+fn void set_limit_axis(Limit* limit, double axis) @private
+{
+	switch (axis)
+	{
+		case 0:
+			limit.axes.x = 1;
+		case 1:
+			limit.axes.y = 1;
+		case 2:
+			limit.axes.z = 1;
+	}
+}
+
 fn PhysicsJoint PhysicsJoint.from_json(self, Object* json, Allocator allocator = mem)
 {
 	self.angular_limits.init(allocator);
@@ -369,56 +390,31 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json, Allocator allocator =
 			float stiffness = (float)limit.get_float("stiffness") ?? 0;
 			float damping = (float)limit.get_float("damping") ?? 0;
 
-			if (try linear_axes)
+			Limit joint_limit = {
+				.axes = { 0, 0, 0 },
+				.min = min,
+				.max = max,
+				.stiffness = stiffness,
+				.damping = damping
+			};
+
+			// One limit over several axes stays one limit, with every axis it
+			// names set in the mask. The bounds apply to the length of the
+			// vector across those axes, not to each on its own — two angular
+			// axes are a cone, and splitting them would give two independent
+			// hinges that each allow the full angle, a corner the cone forbids.
+			if (try linear_axes && linear_axes.array.len() > 0)
 			{
-				foreach (axis : linear_axes.array)
-				{
-					Limit joint_limit = {
-						.axes = { 0, 0, 0 },
-						.min = min,
-						.max = max,
-						.stiffness = stiffness,
-						.damping = damping
-					};
-
-					switch (axis.f)
-					{
-						case 0:
-							joint_limit.axes.x = 1;
-						case 1:
-							joint_limit.axes.y = 1;
-						case 2:
-							joint_limit.axes.z = 1;
-					}
-
-					self.linear_limits.push(joint_limit);
-				}
+				Limit linear_limit = joint_limit;
+				foreach (axis : linear_axes.array) set_limit_axis(&linear_limit, axis.f);
+				self.linear_limits.push(linear_limit);
 			}
 
-			if (try angular_axes)
+			if (try angular_axes && angular_axes.array.len() > 0)
 			{
-				foreach (axis : angular_axes.array)
-				{
-					Limit joint_limit = {
-						.axes = { 0, 0, 0 },
-						.min = min,
-						.max = max,
-						.stiffness = stiffness,
-						.damping = damping
-					};
-
-					switch (axis.f)
-					{
-						case 0:
-							joint_limit.axes.x = 1;
-						case 1:
-							joint_limit.axes.y = 1;
-						case 2:
-							joint_limit.axes.z = 1;
-					}
-
-					self.angular_limits.push(joint_limit);
-				}
+				Limit angular_limit = joint_limit;
+				foreach (axis : angular_axes.array) set_limit_axis(&angular_limit, axis.f);
+				self.angular_limits.push(angular_limit);
 			}
 		}
 	}
@@ -432,11 +428,32 @@ fn PhysicsJoint PhysicsJoint.from_json(self, Object* json, Allocator allocator =
 			joint_drive.axis = (uint)drive.get_int("axis") ?? 0;
 			joint_drive.position_target = (float)drive.get_float("positionTarget") ?? 0;
 			joint_drive.velocity_target = (float)drive.get_float("velocityTarget") ?? 0;
+			joint_drive.max_force = (float)drive.get_float("maxForce") ?? 0;
 			joint_drive.stiffness = (float)drive.get_float("stiffness") ?? 0;
 			joint_drive.damping = (float)drive.get_float("damping") ?? 0;
 
-			String? type = drive.get_string("type");
-			String? mode = drive.get_string("mode");
+			String type = drive.get_string("type") ?? "angular";
+			String mode = drive.get_string("mode") ?? "force";
+
+			switch (type)
+			{
+				case "linear":
+					joint_drive.type = LINEAR;
+				case "angular":
+					joint_drive.type = ANGULAR;
+				default:
+					joint_drive.type = ANGULAR;
+			}
+
+			switch (mode)
+			{
+				case "force":
+					joint_drive.drive = FORCE;
+				case "acceleration":
+					joint_drive.drive = ACCELERATION;
+				default:
+					joint_drive.drive = FORCE;
+			}
 
 			self.drives.push(joint_drive);
 		}
