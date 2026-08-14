@@ -1903,7 +1903,26 @@ fn uint Accessor.dataSize(Accessor self)
 }
 
 // Returns matrix from node transform, scale, rotation
-fn Matrix4f Node.local_matrix(&self) => to_matrix(self.translation, self.scale, self.rotation);
+// A node states its transform either as a matrix or as a translation/rotation/
+// scale triple, never as both — so reading the triple alone drops the transform
+// of every node that chose the matrix, and `global_matrix` then hands back a
+// chain with those links missing. That is how a COLLADA export loses the `Z_UP`
+// node it puts above everything else and arrives lying on its back.
+//
+// `matrix` starts out the identity and `from_json` writes it only when the file
+// states one, so "not the identity" is the same question as "was one stated" —
+// and where a file did state the identity, the two answers agree.
+fn Matrix4f Node.local_matrix(&self)
+{
+	Matrix4f identity = matrix::IDENTITY4;
+	for (usz i = 0; i < 16; i++)
+	{
+		// Exact, because this asks what the parser wrote and not whether some
+		// computed matrix came out near enough to the identity.
+		if (self.matrix.m[i] != identity.m[i]) return self.matrix;
+	}
+	return to_matrix(self.translation, self.scale, self.rotation);
+}
 
 // Spherical linear interpolation between two unit quaternions. Local copy so
 // this lib doesn't depend on the C3 stdlib's Quaternionf.slerp, which has a
