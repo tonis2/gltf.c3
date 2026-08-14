@@ -1395,6 +1395,17 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 
 	defer catch content.free();
 
+	// The JSON tree below is scratch. Every value in it is copied into `content`
+	// before this returns, and the tree is thrown away at the end — which is why
+	// it can come out of the temp pool rather than the heap. Declared before the
+	// tree's own `defer free`, so this pop runs after it.
+	//
+	// It is the difference between a handful of allocations and tens of
+	// thousands: a glTF's metadata is one Object per JSON value, and the pool
+	// hands those out by bumping a pointer.
+	PoolState json_pool = mem::temp_push();
+	defer mem::temp_pop(json_pool);
+
 	Object*? gltfJson;
 	char[12] gltf_header;
 
@@ -1439,10 +1450,9 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 		}
 
 		stream.seek(20, SeekOrigin.FROM_START)!;
-		char[] json_buf = alloc::new_array(allocator, char, json_chunk_length);
-		defer alloc::free(allocator, json_buf);
+		char[] json_buf = alloc::new_array(tmem, char, json_chunk_length);
 		stream.read(json_buf)!;
-		gltfJson = json::parse(allocator, (String)json_buf);
+		gltfJson = json::parse(tmem, (String)json_buf);
 		stream.seek((sz)20 + json_chunk_length, SeekOrigin.FROM_START)!;
 
 		// Record GLB binary chunk layout for deferred loading.
@@ -1481,10 +1491,9 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	{
 		sz total_size = (sz)stream.size()!;
 		stream.seek(0, SeekOrigin.FROM_START)!;
-		char[] json_buf = alloc::new_array(allocator, char, total_size);
-		defer alloc::free(allocator, json_buf);
+		char[] json_buf = alloc::new_array(tmem, char, total_size);
 		stream.read(json_buf)!;
-		gltfJson = json::parse(allocator, (String)json_buf);
+		gltfJson = json::parse(tmem, (String)json_buf);
 	}
 
 	if (catch err = gltfJson)
