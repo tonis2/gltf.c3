@@ -7,7 +7,7 @@ import std::core::string;
 import std::math::matrix;
 import std::math::vector;
 import std::math;
-import std::core::mem;
+
 import std::collections::list;
 import std::encoding::json;
 import std::encoding::base64;

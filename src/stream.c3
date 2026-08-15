@@ -3,9 +3,8 @@ module gltf;
 import std::io;
 import std::io::file;
 import std::io::file::mmap;
-import std::core::mem;
-import std::core::mem::allocator;
-import std::core::string;
+
+
 import std::math;
 import std::math::matrix;
 import std::math::vector;

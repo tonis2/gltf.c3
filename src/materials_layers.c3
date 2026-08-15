@@ -20,7 +20,7 @@ module gltf;
 
 import std::collections::object;
 import std::collections::list;
-import std::core::mem;
+
 import std::math;
 import std::math::vector;
 

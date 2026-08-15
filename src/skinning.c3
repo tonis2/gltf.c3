@@ -24,8 +24,8 @@
 module gltf;
 
 import std::io;
-import std::core::mem;
-import std::core::mem::allocator;
+
+
 import std::math;
 import std::math::matrix;
 import std::math::vector;
