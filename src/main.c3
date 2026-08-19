@@ -831,6 +831,10 @@ fn void? Image.from_json(&self, Object* json)
 	String? mimeType = json.get_string("mimeType");
 	String? uri = json.get_string("uri");
 
+	self.name = "";
+	self.view = -1;
+	self.uri = {};
+
 	if (try bufferView) self.view = (uint)bufferView;
 	if (try name) self.name = name;
 	if (try mimeType)

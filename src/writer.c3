@@ -282,6 +282,54 @@ struct WriteExtra
 	String value;
 }
 
+<*
+ One image, as bytes inside the binary blob.
+
+ A bufferView rather than a URI, because that is the only form a `.glb` can
+ carry and the one a `.gltf` can carry too — an external `.png` beside the file
+ would be a second thing to copy and a second thing to lose.
+*>
+struct WriteImage
+{
+	String name;
+	uint view;
+	ImageType mime;
+}
+
+struct WriteTexture
+{
+	uint source;
+	int sampler;
+}
+
+<*
+ A metallic-roughness material.
+
+ The subset glTF calls the core PBR model and every consumer implements: a base
+ colour, its texture, and the two factors. Normal, occlusion and emissive maps
+ are absent because nothing in this writer produces them yet; adding one is a
+ field, a parameter and three lines of JSON.
+*>
+struct WriteMaterial
+{
+	String name;
+	Vec4 base_color;
+	float metallic;
+	float roughness;
+	int base_color_texture;
+	bool double_sided;
+	AlphaMode alpha_mode;
+	float alpha_cutoff;
+}
+
+struct WriteSamplerState
+{
+	MagFilter mag;
+	MinFilter min;
+	WrapMode wrap_s;
+	WrapMode wrap_t;
+}
+
 struct WriteView
 {
 	sz offset;
@@ -315,6 +363,11 @@ struct GltfBuilder
 	List{WriteExtra} extras;
 	List{uint} roots;
 
+	List{WriteImage} images;
+	List{WriteTexture} textures;
+	List{WriteMaterial} materials;
+	List{WriteSamplerState} samplers;
+
 	List{Shape} shapes;
 	List{PhysicsMaterial} physics_materials;
 	List{CollisionFilter} collision_filters;
@@ -340,6 +393,10 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.animations.init(allocator);
 	self.extras.init(allocator);
 	self.roots.init(allocator);
+	self.images.init(allocator);
+	self.textures.init(allocator);
+	self.materials.init(allocator);
+	self.samplers.init(allocator);
 	self.shapes.init(allocator);
 	self.physics_materials.init(allocator);
 	self.collision_filters.init(allocator);
@@ -421,6 +478,14 @@ fn void GltfBuilder.free(&self)
 
 	self.physics_materials.free();
 	self.shapes.free();
+
+	foreach (image : self.images) image.name.free(self.allocator);
+	self.images.free();
+	self.textures.free();
+
+	foreach (material : self.materials) material.name.free(self.allocator);
+	self.materials.free();
+	self.samplers.free();
 
 	self.roots.free();
 }
@@ -761,6 +826,130 @@ fn uint GltfBuilder.add_node(&self, String name, int mesh = -1, int skin = -1,
 	node.children.init(self.allocator);
 	self.nodes.push(node);
 	return (uint)self.nodes.len() - 1;
+}
+
+// --- Materials, textures and images ---
+
+<*
+ The MIME type glTF names an image by.
+
+ KTX2 is `image/ktx2` and is only legal under KHR_texture_basisu, so a writer
+ that emits one has an extension to declare as well — which is why nothing here
+ produces one and this exists to round-trip a file that already did.
+*>
+fn String ImageType.mime_name(self)
+{
+	switch (self)
+	{
+		case IMAGE_JPEG: return "image/jpeg";
+		case IMAGE_PNG: return "image/png";
+		case IMAGE_BMP: return "image/bmp";
+		case IMAGE_GIF: return "image/gif";
+		case IMAGE_KTX2: return "image/ktx2";
+	}
+}
+
+fn String AlphaMode.gltf_name(self)
+{
+	switch (self)
+	{
+		case BLEND: return "BLEND";
+		// The parser reads MASK and CUTOFF into two enumerants of one glTF value;
+		// both write back as MASK, which is the only spelling the format has.
+		case MASK: return "MASK";
+		case CUTOFF: return "MASK";
+		default: return "OPAQUE";
+	}
+}
+
+// The sampler enums are ordinals here and GL constants in the file, so both
+// directions of the mapping are written out rather than cast.
+fn uint MagFilter.gl_value(self) => self == LINEAR ? 9729 : 9728;
+
+fn uint MinFilter.gl_value(self)
+{
+	switch (self)
+	{
+		case NEAREST: return 9728;
+		case LINEAR: return 9729;
+		case NEAREST_MIPMAP_NEAREST: return 9984;
+		case LINEAR_MIPMAP_NEAREST: return 9985;
+		case NEAREST_MIPMAP_LINEAR: return 9986;
+		case LINEAR_MIPMAP_LINEAR: return 9987;
+	}
+}
+
+fn uint WrapMode.gl_value(self)
+{
+	switch (self)
+	{
+		case CLAMP_TO_EDGE: return 33071;
+		case MIRRORED_REPEAT: return 33648;
+		case REPEAT: return 10497;
+	}
+}
+
+<*
+ Put an encoded image into the blob and register it.
+
+ `encoded` is the file's own bytes — the PNG or JPEG as it was compressed —
+ rather than pixels. Nothing here decodes anything, which is what makes copying
+ an image from one document to another lossless as well as cheap.
+
+ The view carries no `target`: the spec forbids one on a bufferView an image
+ reads, because the targets are the two vertex-buffer bindings.
+
+ @param mime : `The container the bytes are in. glTF requires it for a bufferView image; it cannot be sniffed by the reader.`
+ @return `The image index, for add_texture.`
+*>
+fn uint GltfBuilder.add_image(&self, String name, char[] encoded, ImageType mime)
+{
+	uint view = self.add_view(encoded);
+	self.images.push({ .name = name.copy(self.allocator), .view = view, .mime = mime });
+	return (uint)self.images.len() - 1;
+}
+
+<*
+ @param sampler : `Index from add_texture_sampler, or -1 for the viewer's default — which is repeat with mipmapped linear filtering.`
+*>
+fn uint GltfBuilder.add_texture(&self, uint image, int sampler = -1)
+{
+	self.textures.push({ .source = image, .sampler = sampler });
+	return (uint)self.textures.len() - 1;
+}
+
+fn uint GltfBuilder.add_texture_sampler(&self, MagFilter mag = LINEAR, MinFilter min = LINEAR_MIPMAP_LINEAR,
+	WrapMode wrap_s = REPEAT, WrapMode wrap_t = REPEAT)
+{
+	self.samplers.push({ .mag = mag, .min = min, .wrap_s = wrap_s, .wrap_t = wrap_t });
+	return (uint)self.samplers.len() - 1;
+}
+
+<*
+ A metallic-roughness material, for `add_primitive`'s `material` argument.
+
+ The defaults are glTF's own, so a material stating nothing is white, fully
+ metallic and fully rough — which is what a consumer assumes for a primitive
+ that names no material at all, and therefore the one set of defaults that
+ cannot change how anything looks by being written down.
+
+ @param base_color_texture : `Texture index from add_texture, or -1. Sampled through TEXCOORD_0.`
+*>
+fn uint GltfBuilder.add_material(&self, String name, Vec4 base_color = { 1, 1, 1, 1 },
+	float metallic = 1.0, float roughness = 1.0, int base_color_texture = -1,
+	bool double_sided = false, AlphaMode alpha_mode = OPAQUE, float alpha_cutoff = 0.5)
+{
+	self.materials.push({
+		.name = name.copy(self.allocator),
+		.base_color = base_color,
+		.metallic = metallic,
+		.roughness = roughness,
+		.base_color_texture = base_color_texture,
+		.double_sided = double_sided,
+		.alpha_mode = alpha_mode,
+		.alpha_cutoff = alpha_cutoff,
+	});
+	return (uint)self.materials.len() - 1;
 }
 
 fn void GltfBuilder.add_child(&self, uint parent, uint child) => self.nodes.get_ref(parent).children.push(child);
@@ -1668,6 +1857,94 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				o.append_char('}');
 			}
 			o.append_string("]}");
+		}
+		o.append_char(']');
+	}
+
+	if (self.materials.len() > 0)
+	{
+		o.append_string(`,"materials":[`);
+		foreach (i, material : self.materials)
+		{
+			if (i > 0) o.append_char(',');
+			o.append_char('{');
+			if (material.name.len > 0)
+			{
+				o.append_string(`"name":`);
+				append_json_string(o, material.name);
+				o.append_char(',');
+			}
+			o.append_string(`"pbrMetallicRoughness":{"baseColorFactor":`);
+			append_json_floats(o, material.base_color[..]);
+			o.append_string(`,"metallicFactor":`);
+			append_json_float(o, material.metallic);
+			o.append_string(`,"roughnessFactor":`);
+			append_json_float(o, material.roughness);
+			if (material.base_color_texture >= 0)
+			{
+				o.appendf(`,"baseColorTexture":{"index":%d}`, material.base_color_texture)!!;
+			}
+			o.append_char('}');
+			// OPAQUE and single-sided are the defaults, so stating them would only
+			// make two documents that mean the same thing fail to compare equal.
+			if (material.alpha_mode != OPAQUE)
+			{
+				o.append_string(`,"alphaMode":`);
+				append_json_string(o, material.alpha_mode.gltf_name());
+				if (material.alpha_mode == MASK || material.alpha_mode == CUTOFF)
+				{
+					o.append_string(`,"alphaCutoff":`);
+					append_json_float(o, material.alpha_cutoff);
+				}
+			}
+			if (material.double_sided) o.append_string(`,"doubleSided":true`);
+			o.append_char('}');
+		}
+		o.append_char(']');
+	}
+
+	if (self.textures.len() > 0)
+	{
+		o.append_string(`,"textures":[`);
+		foreach (i, texture : self.textures)
+		{
+			if (i > 0) o.append_char(',');
+			o.appendf(`{"source":%d`, texture.source)!!;
+			if (texture.sampler >= 0) o.appendf(`,"sampler":%d`, texture.sampler)!!;
+			o.append_char('}');
+		}
+		o.append_char(']');
+	}
+
+	if (self.images.len() > 0)
+	{
+		o.append_string(`,"images":[`);
+		foreach (i, image : self.images)
+		{
+			if (i > 0) o.append_char(',');
+			o.append_char('{');
+			if (image.name.len > 0)
+			{
+				o.append_string(`"name":`);
+				append_json_string(o, image.name);
+				o.append_char(',');
+			}
+			o.appendf(`"bufferView":%d,"mimeType":`, image.view)!!;
+			append_json_string(o, image.mime.mime_name());
+			o.append_char('}');
+		}
+		o.append_char(']');
+	}
+
+	if (self.samplers.len() > 0)
+	{
+		o.append_string(`,"samplers":[`);
+		foreach (i, sampler : self.samplers)
+		{
+			if (i > 0) o.append_char(',');
+			o.appendf(`{"magFilter":%d,"minFilter":%d,"wrapS":%d,"wrapT":%d}`,
+				sampler.mag.gl_value(), sampler.min.gl_value(),
+				sampler.wrap_s.gl_value(), sampler.wrap_t.gl_value())!!;
 		}
 		o.append_char(']');
 	}
