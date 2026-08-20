@@ -218,7 +218,27 @@ struct WriteNode
 	int mesh;
 	int skin;
 	int physics;
+	// Index into GltfBuilder.instancing, or -1. Held the same way `physics` is,
+	// and for the same reason: a node carrying no extension writes no
+	// "extensions" object at all, so the absent case has to be a slot rather
+	// than an empty list sitting on every node in the document.
+	int instancing;
 	List{uint} children;
+}
+
+<*
+ The EXT_mesh_gpu_instancing block on one node: the accessors that place its
+ copies.
+
+ Held as the same `WriteAttribute` pairs a primitive's attributes are, because
+ that is what the extension is — a second attributes dictionary, read per
+ instance instead of per vertex. Keeping the shape means custom attributes need
+ nothing here: `_COLOR_0` is a name and an accessor exactly as `TRANSLATION` is,
+ and the writer never has to learn what either one means.
+*>
+struct WriteInstancing
+{
+	List{WriteAttribute} attributes;
 }
 
 <*
@@ -373,6 +393,7 @@ struct GltfBuilder
 	List{CollisionFilter} collision_filters;
 	List{PhysicsJoint} physics_joints;
 	List{WriteNodePhysics} node_physics;
+	List{WriteInstancing} instancing;
 
 	String generator;
 }
@@ -402,6 +423,7 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.collision_filters.init(allocator);
 	self.physics_joints.init(allocator);
 	self.node_physics.init(allocator);
+	self.instancing.init(allocator);
 	self.generator = "gltf.c3";
 	return self;
 }
@@ -475,6 +497,13 @@ fn void GltfBuilder.free(&self)
 		if (physics.has_collider) physics.collider.free();
 	}
 	self.node_physics.free();
+
+	foreach (block : self.instancing)
+	{
+		foreach (attribute : block.attributes) attribute.name.free(self.allocator);
+		block.attributes.free();
+	}
+	self.instancing.free();
 
 	self.physics_materials.free();
 	self.shapes.free();
@@ -823,6 +852,7 @@ fn uint GltfBuilder.add_node(&self, String name, int mesh = -1, int skin = -1,
 	node.mesh = mesh;
 	node.skin = skin;
 	node.physics = -1;
+	node.instancing = -1;
 	node.children.init(self.allocator);
 	self.nodes.push(node);
 	return (uint)self.nodes.len() - 1;
@@ -1226,6 +1256,54 @@ fn void GltfBuilder.add_node_joint(&self, uint node, uint connected_node, uint j
 	physics.connected_node = connected_node;
 	physics.joint = joint_settings;
 	physics.enable_collision = enable_collision;
+}
+
+<*
+ Draw this node's mesh many times, once per entry in the given attributes.
+
+ `EXT_mesh_gpu_instancing`. Each attribute is an accessor read by instance
+ rather than by vertex: `TRANSLATION` (VEC3), `ROTATION` (VEC4, a quaternion)
+ and `SCALE` (VEC3) place the copies relative to the node's own transform, and
+ any of the three may be left out, in which case that copy is the identity.
+ Application-specific attributes are legal alongside them and are prefixed with
+ an underscore by convention — `_COLOR_0` for a per-copy tint, and nothing here
+ needs to know what it is.
+
+ **Every accessor must have the same count**, which is the instance count. The
+ extension has no separate length field, so a shorter one is not a smaller
+ attribute — it is a document readers will run off the end of. This does not
+ check: the caller built the arrays and knows the count; a builder that
+ second-guessed it could only refuse silently or crash, and both are worse than
+ the file being wrong in a way a validator names.
+
+ The node must have a mesh. Instancing draws that mesh; it does not replicate
+ the node's children, which are placed once each as they always were.
+
+ Calling this twice on one node replaces the first block rather than giving the
+ node two, matching `add_collider`.
+
+ @param node : `Index returned by add_node.`
+ @param attributes : `Named accessor indices, at least one, all of equal count.`
+*>
+fn void GltfBuilder.add_instancing(&self, uint node, WriteAttribute[] attributes)
+{
+	WriteNode* target = self.nodes.get_ref(node);
+	if (target.instancing < 0)
+	{
+		WriteInstancing fresh;
+		fresh.attributes.init(self.allocator);
+		self.instancing.push(fresh);
+		target.instancing = (int)self.instancing.len() - 1;
+	}
+
+	WriteInstancing* block = self.instancing.get_ref((uint)target.instancing);
+	foreach (attribute : block.attributes) attribute.name.free(self.allocator);
+	block.attributes.clear();
+
+	foreach (attribute : attributes)
+	{
+		block.attributes.push({ .name = attribute.name.copy(self.allocator), .accessor = attribute.accessor });
+	}
 }
 
 // --- JSON ---
@@ -1660,13 +1738,32 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 	bool rigid_body_arrays = self.physics_materials.len() > 0 || self.collision_filters.len() > 0
 		|| self.physics_joints.len() > 0;
 	bool uses_rigid_bodies = rigid_body_arrays || self.node_physics.len() > 0;
+	bool uses_instancing = self.instancing.len() > 0;
 
-	if (uses_shapes || uses_rigid_bodies)
+	if (uses_shapes || uses_rigid_bodies || uses_instancing)
 	{
+		// A running "something is already there" rather than the pairwise
+		// conditions two extensions got away with. Three is where that stops
+		// being readable and starts being where a fourth one puts the comma in
+		// the wrong place.
+		bool written = false;
 		o.append_string(`,"extensionsUsed":[`);
-		if (uses_shapes) append_json_string(o, IMPLICIT_SHAPES_EXTENSION);
-		if (uses_shapes && uses_rigid_bodies) o.append_char(',');
-		if (uses_rigid_bodies) append_json_string(o, RIGID_BODIES_EXTENSION);
+		if (uses_shapes)
+		{
+			append_json_string(o, IMPLICIT_SHAPES_EXTENSION);
+			written = true;
+		}
+		if (uses_rigid_bodies)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, RIGID_BODIES_EXTENSION);
+			written = true;
+		}
+		if (uses_instancing)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, MESH_GPU_INSTANCING_EXTENSION);
+		}
 		o.append_char(']');
 	}
 
@@ -1811,13 +1908,30 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				append_json_uints(o, &node.children);
 				first = false;
 			}
-			if (node.physics >= 0)
+			if (node.physics >= 0 || node.instancing >= 0)
 			{
 				if (!first) o.append_char(',');
 				o.append_string(`"extensions":{`);
-				append_json_string(o, RIGID_BODIES_EXTENSION);
-				o.append_char(':');
-				append_node_physics_json(o, self.node_physics[(uint)node.physics]);
+				if (node.physics >= 0)
+				{
+					append_json_string(o, RIGID_BODIES_EXTENSION);
+					o.append_char(':');
+					append_node_physics_json(o, self.node_physics[(uint)node.physics]);
+				}
+				if (node.instancing >= 0)
+				{
+					if (node.physics >= 0) o.append_char(',');
+					append_json_string(o, MESH_GPU_INSTANCING_EXTENSION);
+					o.append_string(`:{"attributes":{`);
+					WriteInstancing* block = self.instancing.get_ref((uint)node.instancing);
+					foreach (j, attribute : block.attributes)
+					{
+						if (j > 0) o.append_char(',');
+						append_json_string(o, attribute.name);
+						o.appendf(":%d", attribute.accessor)!!;
+					}
+					o.append_string("}}");
+				}
 				o.append_char('}');
 			}
 			o.append_char('}');
