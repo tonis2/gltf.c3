@@ -223,7 +223,55 @@ struct WriteNode
 	// "extensions" object at all, so the absent case has to be a slot rather
 	// than an empty list sitting on every node in the document.
 	int instancing;
+	// Index into GltfBuilder.cameras, or -1. Core glTF rather than an extension,
+	// so this one is a plain `"camera"` key on the node.
+	int camera;
+	// Index into GltfBuilder.lights, or -1 — KHR_lights_punctual, held as a slot
+	// for `physics`'s reason.
+	int light;
 	List{uint} children;
+}
+
+<*
+ A perspective camera.
+
+ Perspective only. An orthographic one is four more fields and a second branch in
+ the emitter, and nothing that writes through this library has one — the note
+ `WriteMaterial` used to carry about its missing maps applies here now instead.
+
+ `yfov` and `znear` are the two the parser requires; `aspect` and `zfar` are
+ optional in the spec and are written only when set, because a viewer without an
+ aspect ratio uses its own viewport, which is almost always what is wanted.
+*>
+struct WriteCamera
+{
+	String name;
+	float yfov;
+	float znear;
+	float zfar;
+	float aspect;
+}
+
+<*
+ One `KHR_lights_punctual` light.
+
+ **A directional light has no position and no direction of its own.** It shines
+ along the **-Z** of whatever node carries it, so aiming one means rotating the
+ node — there is no field here for it, and a writer that added one would be
+ describing something no reader looks at.
+
+ `range` and the cone angles are read only for the types that have them, which is
+ what the parser does with them too.
+*>
+struct WriteLight
+{
+	String name;
+	LightType type;
+	Vec3 color;
+	float intensity;
+	float range;
+	float inner_cone_angle;
+	float outer_cone_angle;
 }
 
 <*
@@ -323,12 +371,74 @@ struct WriteTexture
 }
 
 <*
+ One `textureInfo`: which texture, and where on the surface it lands.
+
+ The write side of the parser's `TextureInfo`, and the one field that differs is
+ the important one — `texture` is an `add_texture` index, where a parsed
+ `TextureInfo.source` has already been resolved through the textures array to the
+ *image*. Two different numbers under one name is why the writer keeps a type of
+ its own rather than round-tripping the read struct.
+
+ The transform is `KHR_texture_transform`, and it is written only when it differs
+ from the identity — an ordinary texture then names no extension at all, which
+ keeps the declaration in `extensionsUsed` honest.
+*>
+struct WriteTextureRef
+{
+	int texture;
+	float rotation;
+	Vec2 offset;
+	Vec2 scale;
+}
+
+// No texture, and the identity transform the parser reads back for an absent
+// one. The default for every textureInfo slot the writer has.
+const WriteTextureRef NO_TEXTURE_REF = {
+	.texture = -1, .rotation = 0, .offset = { 0, 0 }, .scale = { 1.0, 1.0 }
+};
+
+<*
+ A textureInfo naming an image, with no transform on it.
+
+ Exists so that filling one in never means declaring the struct: a zero-filled
+ `WriteTextureRef` has a scale of zero rather than one, which the emitter reads
+ as a transform that collapses the image to a point. That is a picture that
+ vanishes, written by a caller who only wanted to name it.
+
+ @param texture : `Index from add_texture, or -1 for no texture at all.`
+*>
+fn WriteTextureRef texture_ref(int texture)
+{
+	WriteTextureRef info = NO_TEXTURE_REF;
+	info.texture = texture;
+	return info;
+}
+
+fn bool WriteTextureRef.is_transformed(self)
+{
+	return self.rotation != 0 || self.offset.x != 0 || self.offset.y != 0
+		|| self.scale.x != 1.0 || self.scale.y != 1.0;
+}
+
+// Whether two textureInfos would write the same JSON. For a caller deduplicating
+// materials by what they state rather than by where they came from.
+fn bool WriteTextureRef.same_as(self, WriteTextureRef other)
+{
+	return self.texture == other.texture && self.rotation == other.rotation
+		&& self.offset.x == other.offset.x && self.offset.y == other.offset.y
+		&& self.scale.x == other.scale.x && self.scale.y == other.scale.y;
+}
+
+<*
  A metallic-roughness material.
 
  The subset glTF calls the core PBR model and every consumer implements: a base
- colour, its texture, and the two factors. Normal, occlusion and emissive maps
- are absent because nothing in this writer produces them yet; adding one is a
- field, a parameter and three lines of JSON.
+ colour, its texture, the two factors, and — since something finally produced
+ them — the normal, occlusion and emissive maps beside them.
+
+ Every texture slot is a `WriteTextureRef` rather than a bare index, so any of
+ them may carry a `KHR_texture_transform`. That is what a tiling floor is: one
+ image, a repeat and an offset, which core glTF has no other place for.
 *>
 struct WriteMaterial
 {
@@ -336,10 +446,24 @@ struct WriteMaterial
 	Vec4 base_color;
 	float metallic;
 	float roughness;
-	int base_color_texture;
+	WriteTextureRef base_color_texture;
+	WriteTextureRef normal_texture;
+	// The `scale` on a normalTexture, which multiplies the sampled x and y. 1 is
+	// the glTF default and is left unwritten.
+	float normal_scale;
+	WriteTextureRef occlusion_texture;
+	// The `strength` on an occlusionTexture. 1 is the default.
+	float occlusion_strength;
+	WriteTextureRef emissive_texture;
+	Vec3 emissive_factor;
 	bool double_sided;
 	AlphaMode alpha_mode;
 	float alpha_cutoff;
+	// CUSTOM_materials_layers — index into GltfBuilder.material_layers, or -1.
+	// A slot rather than a list on every material, for the reason WriteNode's
+	// `physics` gives: a material carrying no layers must write no "extensions"
+	// object at all, and an empty list on all of them cannot say that.
+	int layers;
 }
 
 struct WriteSamplerState
@@ -387,6 +511,11 @@ struct GltfBuilder
 	List{WriteTexture} textures;
 	List{WriteMaterial} materials;
 	List{WriteSamplerState} samplers;
+	List{WriteCamera} cameras;
+	List{WriteLight} lights;
+	// CUSTOM_materials_layers — see materials_layers.c3, which owns every line
+	// that reads or writes this.
+	List{WriteMaterialLayers} material_layers;
 
 	List{Shape} shapes;
 	List{PhysicsMaterial} physics_materials;
@@ -418,6 +547,9 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.textures.init(allocator);
 	self.materials.init(allocator);
 	self.samplers.init(allocator);
+	self.cameras.init(allocator);
+	self.lights.init(allocator);
+	self.material_layers.init(allocator);
 	self.shapes.init(allocator);
 	self.physics_materials.init(allocator);
 	self.collision_filters.init(allocator);
@@ -515,6 +647,14 @@ fn void GltfBuilder.free(&self)
 	foreach (material : self.materials) material.name.free(self.allocator);
 	self.materials.free();
 	self.samplers.free();
+
+	foreach (camera : self.cameras) camera.name.free(self.allocator);
+	self.cameras.free();
+	foreach (light : self.lights) light.name.free(self.allocator);
+	self.lights.free();
+
+	// CUSTOM_materials_layers — materials_layers.c3 owns what a layer holds.
+	self.free_material_layers();
 
 	self.roots.free();
 }
@@ -853,6 +993,8 @@ fn uint GltfBuilder.add_node(&self, String name, int mesh = -1, int skin = -1,
 	node.skin = skin;
 	node.physics = -1;
 	node.instancing = -1;
+	node.camera = -1;
+	node.light = -1;
 	node.children.init(self.allocator);
 	self.nodes.push(node);
 	return (uint)self.nodes.len() - 1;
@@ -963,10 +1105,15 @@ fn uint GltfBuilder.add_texture_sampler(&self, MagFilter mag = LINEAR, MinFilter
  that names no material at all, and therefore the one set of defaults that
  cannot change how anything looks by being written down.
 
- @param base_color_texture : `Texture index from add_texture, or -1. Sampled through TEXCOORD_0.`
+ The maps beyond the base colour are set with `set_material_maps` rather than
+ taken here: five more optional arguments on a call most callers make with two
+ would be a signature nobody can read, and a material with no normal map is the
+ ordinary case.
+
+ @param base_color_texture : `The base colour map, from texture_ref(add_texture(...)), or NO_TEXTURE_REF. Sampled through TEXCOORD_0.`
 *>
 fn uint GltfBuilder.add_material(&self, String name, Vec4 base_color = { 1, 1, 1, 1 },
-	float metallic = 1.0, float roughness = 1.0, int base_color_texture = -1,
+	float metallic = 1.0, float roughness = 1.0, WriteTextureRef base_color_texture = NO_TEXTURE_REF,
 	bool double_sided = false, AlphaMode alpha_mode = OPAQUE, float alpha_cutoff = 0.5)
 {
 	self.materials.push({
@@ -975,11 +1122,141 @@ fn uint GltfBuilder.add_material(&self, String name, Vec4 base_color = { 1, 1, 1
 		.metallic = metallic,
 		.roughness = roughness,
 		.base_color_texture = base_color_texture,
+		.normal_texture = NO_TEXTURE_REF,
+		.normal_scale = 1.0,
+		.occlusion_texture = NO_TEXTURE_REF,
+		.occlusion_strength = 1.0,
+		.emissive_texture = NO_TEXTURE_REF,
+		.emissive_factor = { 0, 0, 0 },
 		.double_sided = double_sided,
 		.alpha_mode = alpha_mode,
 		.alpha_cutoff = alpha_cutoff,
+		// CUSTOM_materials_layers — given one by add_material_layers, and only
+		// by it. A plain material carries none.
+		.layers = -1,
 	});
 	return (uint)self.materials.len() - 1;
+}
+
+<*
+ The maps beyond the base colour: normal, occlusion and emissive.
+
+ Separate from `add_material` because most materials have none of them and a
+ nine-argument constructor would be unreadable at every call site that wanted
+ two. Anything left at its default is left out of the file, so calling this with
+ nothing set writes exactly what not calling it writes.
+
+ @param material : `Index returned by add_material.`
+ @param normal_scale : `Multiplies the sampled x and y of the normal map. 1 is glTF's default.`
+ @param occlusion_strength : `How far the occlusion map darkens. 1 is glTF's default.`
+*>
+fn void GltfBuilder.set_material_maps(
+	&self, uint material,
+	WriteTextureRef normal = NO_TEXTURE_REF, float normal_scale = 1.0,
+	WriteTextureRef occlusion = NO_TEXTURE_REF, float occlusion_strength = 1.0,
+	WriteTextureRef emissive = NO_TEXTURE_REF, Vec3 emissive_factor = { 0, 0, 0 }
+)
+{
+	WriteMaterial* target = self.materials.get_ref(material);
+	target.normal_texture = normal;
+	target.normal_scale = normal_scale;
+	target.occlusion_texture = occlusion;
+	target.occlusion_strength = occlusion_strength;
+	target.emissive_texture = emissive;
+	target.emissive_factor = emissive_factor;
+}
+
+// --- Cameras and lights ---
+
+<*
+ Register a perspective camera, to hang off a node with `set_node_camera`.
+
+ @param yfov : `Vertical field of view, in **radians**. glTF's unit, not degrees.`
+ @param znear : `Near plane. Must be greater than zero; glTF has no infinite-near.`
+ @param zfar : `Far plane, or 0 to leave it unstated — which the spec reads as an infinite projection.`
+ @param aspect : `Width over height, or 0 to leave it unstated, which lets a viewer use its own viewport. Usually what is wanted.`
+ @return `The camera index, for set_node_camera.`
+*>
+fn uint GltfBuilder.add_camera(&self, String name, float yfov, float znear, float zfar = 0, float aspect = 0)
+{
+	self.cameras.push({
+		.name = name.copy(self.allocator),
+		.yfov = yfov,
+		.znear = znear,
+		.zfar = zfar,
+		.aspect = aspect,
+	});
+	return (uint)self.cameras.len() - 1;
+}
+
+<*
+ Register a `KHR_lights_punctual` light, to hang off a node with `set_node_light`.
+
+ **Which way it points is the node's business, not this one's.** A directional or
+ spot light shines along its node's -Z; there is no direction here to set, and
+ the rotation given to `add_node` is the whole of the aiming.
+
+ @param range : `Point and spot only: where the light stops. 0 means unlimited, which is the spec's default.`
+ @param inner_cone_angle : `Spot only, radians.`
+ @param outer_cone_angle : `Spot only, radians. The spec's default is a quarter turn.`
+ @return `The light index, for set_node_light.`
+*>
+fn uint GltfBuilder.add_light(&self, String name, LightType type, Vec3 color = { 1, 1, 1 },
+	float intensity = 1.0, float range = 0, float inner_cone_angle = 0,
+	float outer_cone_angle = (float)math::PI / 4.0f)
+{
+	self.lights.push({
+		.name = name.copy(self.allocator),
+		.type = type,
+		.color = color,
+		.intensity = intensity,
+		.range = range,
+		.inner_cone_angle = inner_cone_angle,
+		.outer_cone_angle = outer_cone_angle,
+	});
+	return (uint)self.lights.len() - 1;
+}
+
+<*
+ Point a node at a camera. The node's transform is the camera's placement — glTF
+ has no other way to say where a camera is.
+*>
+fn void GltfBuilder.set_node_camera(&self, uint node, uint camera)
+{
+	self.nodes.get_ref(node).camera = (int)camera;
+}
+
+<*
+ Point a node at a light. The node's rotation is what aims it; see `add_light`.
+*>
+fn void GltfBuilder.set_node_light(&self, uint node, uint light)
+{
+	self.nodes.get_ref(node).light = (int)light;
+}
+
+fn String LightType.gltf_name(self)
+{
+	switch (self)
+	{
+		case DIRECTIONAL: return "directional";
+		case POINT:       return "point";
+		case SPOT:        return "spot";
+	}
+}
+
+// Whether any textureInfo in the document carries a KHR_texture_transform, and
+// so whether the extension has to be declared. The layers half is
+// materials_layers.c3's, which owns every line that reads a layer.
+fn bool GltfBuilder.any_texture_transform(&self)
+{
+	foreach (material : self.materials)
+	{
+		if (material.base_color_texture.is_transformed()) return true;
+		if (material.normal_texture.is_transformed()) return true;
+		if (material.occlusion_texture.is_transformed()) return true;
+		if (material.emissive_texture.is_transformed()) return true;
+	}
+	return self.any_layer_texture_transform();
 }
 
 fn void GltfBuilder.add_child(&self, uint parent, uint child) => self.nodes.get_ref(parent).children.push(child);
@@ -1307,6 +1584,95 @@ fn void GltfBuilder.add_instancing(&self, uint node, WriteAttribute[] attributes
 }
 
 // --- JSON ---
+
+<*
+ One `textureInfo`, with `KHR_texture_transform` when the transform is not the
+ identity.
+
+ Shared by the core material's four maps and by every texture slot of
+ `CUSTOM_materials_layers`, which is why it lives here rather than beside either
+ of them.
+
+ @param scalar : `The one number some textureInfos carry: a normalTexture's scale, an occlusionTexture's strength. Written only when it differs from the fallback.`
+*>
+fn void append_texture_ref_json(
+	DString* out, WriteTextureRef texture, float scalar = 0, String scalar_name = "", float fallback = 0
+) @private
+{
+	out.appendf(`{"index":%d`, texture.texture)!!;
+
+	if (scalar_name.len > 0 && scalar != fallback)
+	{
+		out.append_char(',');
+		append_json_string(out, scalar_name);
+		out.append_char(':');
+		append_json_float(out, scalar);
+	}
+
+	if (texture.is_transformed())
+	{
+		out.append_string(`,"extensions":{`);
+		append_json_string(out, TEXTURE_TRANSFORM_EXTENSION);
+		out.append_string(`:{"offset":`);
+		float[2] offset = { texture.offset.x, texture.offset.y };
+		append_json_floats(out, offset[..]);
+		out.append_string(`,"scale":`);
+		float[2] scale = { texture.scale.x, texture.scale.y };
+		append_json_floats(out, scale[..]);
+		if (texture.rotation != 0)
+		{
+			out.append_string(`,"rotation":`);
+			append_json_float(out, texture.rotation);
+		}
+		out.append_string(`}}`);
+	}
+
+	out.append_char('}');
+}
+
+<*
+ One `KHR_lights_punctual` light.
+
+ White at intensity 1 is the extension's default and is written anyway, because
+ the parser fills `color` with white but leaves `intensity` at whatever the zero
+ fill gave it — an omitted intensity reads back as 0, which is a light that is
+ off. This is the case the physics writer's comment is about: omit only what the
+ parser reads back as the value that was given, and here it does not.
+*>
+fn void append_light_json(DString* out, WriteLight light) @private
+{
+	out.append_char('{');
+	if (light.name.len > 0)
+	{
+		out.append_string(`"name":`);
+		append_json_string(out, light.name);
+		out.append_char(',');
+	}
+	out.append_string(`"type":`);
+	append_json_string(out, light.type.gltf_name());
+	out.append_string(`,"color":`);
+	float[3] color = { light.color.x, light.color.y, light.color.z };
+	append_json_floats(out, color[..]);
+	out.append_string(`,"intensity":`);
+	append_json_float(out, light.intensity);
+
+	// Range is meaningless on a directional light — it reaches everywhere — and
+	// zero is the spec's "unlimited" for the two it does apply to.
+	if (light.type != LightType.DIRECTIONAL && light.range > 0)
+	{
+		out.append_string(`,"range":`);
+		append_json_float(out, light.range);
+	}
+	if (light.type == LightType.SPOT)
+	{
+		out.append_string(`,"spot":{"innerConeAngle":`);
+		append_json_float(out, light.inner_cone_angle);
+		out.append_string(`,"outerConeAngle":`);
+		append_json_float(out, light.outer_cone_angle);
+		out.append_char('}');
+	}
+	out.append_char('}');
+}
 
 fn void append_json_string(DString* out, String value) @private
 {
@@ -1739,8 +2105,21 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 		|| self.physics_joints.len() > 0;
 	bool uses_rigid_bodies = rigid_body_arrays || self.node_physics.len() > 0;
 	bool uses_instancing = self.instancing.len() > 0;
+	// CUSTOM_materials_layers. A stack with no layers in it is still the
+	// extension — `MaterialLayers.from_json` sets `present` on the object being
+	// there at all, and the base material's height data is carried by an
+	// otherwise empty one.
+	bool uses_material_layers = self.material_layers.len() > 0;
+	// KHR_texture_transform. Asked of the textureInfos rather than tracked as a
+	// flag when one is set, because a transform can be put on a material's slot
+	// after `add_material` (through `set_material_maps`) and on a layer's after
+	// `add_layer` — a flag would then be a second thing to remember to set, and
+	// the one that forgot would write a transform the document does not declare.
+	bool uses_texture_transform = self.any_texture_transform();
+	bool uses_lights = self.lights.len() > 0;
 
-	if (uses_shapes || uses_rigid_bodies || uses_instancing)
+	if (uses_shapes || uses_rigid_bodies || uses_instancing || uses_material_layers
+		|| uses_texture_transform || uses_lights)
 	{
 		// A running "something is already there" rather than the pairwise
 		// conditions two extensions got away with. Three is where that stops
@@ -1763,13 +2142,48 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 		{
 			if (written) o.append_char(',');
 			append_json_string(o, MESH_GPU_INSTANCING_EXTENSION);
+			written = true;
+		}
+		if (uses_material_layers)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, MATERIALS_LAYERS_EXTENSION);
+			written = true;
+		}
+		if (uses_texture_transform)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, TEXTURE_TRANSFORM_EXTENSION);
+			written = true;
+		}
+		if (uses_lights)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, PUNCTUAL_LIGHT_EXTENSION);
 		}
 		o.append_char(']');
 	}
 
-	if (uses_shapes || rigid_body_arrays)
+	if (uses_shapes || rigid_body_arrays || uses_lights)
 	{
 		o.append_string(`,"extensions":{`);
+
+		if (uses_lights)
+		{
+			// The lights themselves live here, at the document level, and a node
+			// names one by index. That split is the extension's own: a light is a
+			// description and a node is a placement, so one light may be placed
+			// many times.
+			append_json_string(o, PUNCTUAL_LIGHT_EXTENSION);
+			o.append_string(`:{"lights":[`);
+			foreach (i, light : self.lights)
+			{
+				if (i > 0) o.append_char(',');
+				append_light_json(o, light);
+			}
+			o.append_string("]}");
+			if (uses_shapes || rigid_body_arrays) o.append_char(',');
+		}
 
 		if (uses_shapes)
 		{
@@ -1877,6 +2291,12 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				o.appendf(`"skin":%d`, node.skin)!!;
 				first = false;
 			}
+			if (node.camera >= 0)
+			{
+				if (!first) o.append_char(',');
+				o.appendf(`"camera":%d`, node.camera)!!;
+				first = false;
+			}
 			if (node.translation.x != 0 || node.translation.y != 0 || node.translation.z != 0)
 			{
 				if (!first) o.append_char(',');
@@ -1908,19 +2328,28 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				append_json_uints(o, &node.children);
 				first = false;
 			}
-			if (node.physics >= 0 || node.instancing >= 0)
+			if (node.physics >= 0 || node.instancing >= 0 || node.light >= 0)
 			{
 				if (!first) o.append_char(',');
 				o.append_string(`"extensions":{`);
+				bool extended = false;
+				if (node.light >= 0)
+				{
+					append_json_string(o, PUNCTUAL_LIGHT_EXTENSION);
+					o.appendf(`:{"light":%d}`, node.light)!!;
+					extended = true;
+				}
 				if (node.physics >= 0)
 				{
+					if (extended) o.append_char(',');
 					append_json_string(o, RIGID_BODIES_EXTENSION);
 					o.append_char(':');
 					append_node_physics_json(o, self.node_physics[(uint)node.physics]);
+					extended = true;
 				}
 				if (node.instancing >= 0)
 				{
-					if (node.physics >= 0) o.append_char(',');
+					if (extended) o.append_char(',');
 					append_json_string(o, MESH_GPU_INSTANCING_EXTENSION);
 					o.append_string(`:{"attributes":{`);
 					WriteInstancing* block = self.instancing.get_ref((uint)node.instancing);
@@ -1994,11 +2423,44 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 			append_json_float(o, material.metallic);
 			o.append_string(`,"roughnessFactor":`);
 			append_json_float(o, material.roughness);
-			if (material.base_color_texture >= 0)
+			if (material.base_color_texture.texture >= 0)
 			{
-				o.appendf(`,"baseColorTexture":{"index":%d}`, material.base_color_texture)!!;
+				o.append_string(`,"baseColorTexture":`);
+				append_texture_ref_json(o, material.base_color_texture);
 			}
 			o.append_char('}');
+			// The three maps outside the PBR object. Each is written only when it
+			// names an image, and its scalar only when that is not glTF's default —
+			// the rule the `alphaMode` line below already follows.
+			if (material.normal_texture.texture >= 0)
+			{
+				o.append_string(`,"normalTexture":`);
+				append_texture_ref_json(o, material.normal_texture, material.normal_scale, "scale", 1.0);
+			}
+			if (material.occlusion_texture.texture >= 0)
+			{
+				o.append_string(`,"occlusionTexture":`);
+				append_texture_ref_json(
+					o, material.occlusion_texture, material.occlusion_strength, "strength", 1.0
+				);
+			}
+			if (material.emissive_texture.texture >= 0)
+			{
+				o.append_string(`,"emissiveTexture":`);
+				append_texture_ref_json(o, material.emissive_texture);
+			}
+			// Black is glTF's default and means "does not glow", so it is left
+			// unstated — and a factor is written even with no emissive texture,
+			// because a material may glow a flat colour.
+			if (material.emissive_factor.x != 0 || material.emissive_factor.y != 0
+				|| material.emissive_factor.z != 0)
+			{
+				o.append_string(`,"emissiveFactor":`);
+				float[3] values = {
+					material.emissive_factor.x, material.emissive_factor.y, material.emissive_factor.z
+				};
+				append_json_floats(o, values[..]);
+			}
 			// OPAQUE and single-sided are the defaults, so stating them would only
 			// make two documents that mean the same thing fail to compare equal.
 			if (material.alpha_mode != OPAQUE)
@@ -2012,7 +2474,49 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				}
 			}
 			if (material.double_sided) o.append_string(`,"doubleSided":true`);
+			// CUSTOM_materials_layers — materials_layers.c3 writes the object.
+			if (material.layers >= 0)
+			{
+				o.append_string(`,"extensions":{`);
+				append_material_layers_json(o, self.material_layers.get_ref((uint)material.layers));
+				o.append_char('}');
+			}
 			o.append_char('}');
+		}
+		o.append_char(']');
+	}
+
+	if (self.cameras.len() > 0)
+	{
+		o.append_string(`,"cameras":[`);
+		foreach (i, camera : self.cameras)
+		{
+			if (i > 0) o.append_char(',');
+			o.append_char('{');
+			if (camera.name.len > 0)
+			{
+				o.append_string(`"name":`);
+				append_json_string(o, camera.name);
+				o.append_char(',');
+			}
+			o.append_string(`"type":"perspective","perspective":{"yfov":`);
+			append_json_float(o, camera.yfov);
+			o.append_string(`,"znear":`);
+			append_json_float(o, camera.znear);
+			// Both optional in the spec, and both meaningful when absent: no
+			// `zfar` is an infinite projection, and no `aspectRatio` tells a
+			// viewer to use its own viewport. Zero is this writer's "unstated".
+			if (camera.zfar > 0)
+			{
+				o.append_string(`,"zfar":`);
+				append_json_float(o, camera.zfar);
+			}
+			if (camera.aspect > 0)
+			{
+				o.append_string(`,"aspectRatio":`);
+				append_json_float(o, camera.aspect);
+			}
+			o.append_string("}}");
 		}
 		o.append_char(']');
 	}

@@ -871,3 +871,264 @@ fn void test_motion_zero_survives_parser_defaults() {
     assert(!is_set(back.mass_center) && !is_set(back.inertia_diagonal));
     assert(!is_set(back.linear_velocity) && !is_set(back.angular_velocity));
 }
+
+// CUSTOM_materials_layers, out and back in again.
+//
+// Three layers that differ in every field the parser has a branch for — the two
+// mask sources, a non-default channel, an inverted mask, a blend mode, an alpha
+// riding in baseColorFactor, a separate opacity beside it, and a layer switched
+// off — plus the base material's height data, which is the half of the
+// extension core glTF has no slot for.
+//
+// The texture assertions are the ones worth reading twice: `layer_texture`
+// resolves a textureInfo's index through the textures array to the image it
+// names, so what comes back out of a slot that was written as a *texture* index
+// is an *image* index. That asymmetry is why the writer has structs of its own,
+// and this is what holds it to being the only difference between them.
+fn void test_write_material_layers() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    // The parser never decodes an image, so three bytes are as good as a PNG
+    // and keep the fixture readable.
+    char[3] bytes = { 1, 2, 3 };
+    uint splat_image = builder.add_image("splat", bytes[..], ImageType.IMAGE_PNG);
+    uint height_image = builder.add_image("height", bytes[..], ImageType.IMAGE_PNG);
+    uint splat = builder.add_texture(splat_image);
+    uint height = builder.add_texture(height_image);
+
+    uint material = builder.add_material("terrain");
+    uint stack = builder.add_material_layers(
+        material, gltf::texture_ref((int)height), { .strength = 0.4, .distance = 2.0 }
+    );
+
+    WriteMaterialLayer rock = gltf::material_layer("rock");
+    rock.blend_mode = MULTIPLY;
+    rock.baseColorFactor = { 0.2, 0.4, 0.6, 0.5 };
+    rock.opacity = 0.75;
+    rock.metallicFactor = 0.25;
+    rock.baseColorTexture = gltf::texture_ref((int)splat);
+    rock.mask.source = TEXTURE;
+    rock.mask.channel = G;
+    rock.mask.texture = gltf::texture_ref((int)splat);
+    rock.mask.invert = true;
+    builder.add_layer(stack, rock);
+
+    WriteMaterialLayer moss = gltf::material_layer("moss");
+    moss.blend_mode = SCREEN;
+    moss.emissiveFactor = { 0.1, 0.2, 0.3 };
+    moss.subsurface = { .weight = 0.5, .radius = { 0.4, 0.5, 0.6 } };
+    moss.mask.source = VERTEX_COLOR;
+    moss.mask.channel = B;
+    moss.mask.attribute = "COLOR_1";
+    moss.enabled = false;
+    builder.add_layer(stack, moss);
+
+    // A layer that states nothing, to hold the defaults to being a round trip
+    // rather than a set of numbers that happen to agree.
+    builder.add_layer(stack, gltf::material_layer());
+
+    Vec3[3] triangle = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };
+    uint[3] indices = { 0, 1, 2 };
+    uint positions = builder.add_positions(triangle[..]);
+    uint mesh = builder.add_mesh("terrain");
+    builder.add_primitive(
+        mesh, {{ "POSITION", positions }}, indices: (int)builder.add_indices(indices[..]),
+        material: (int)material
+    );
+    builder.add_root(builder.add_node("terrain", mesh: (int)mesh));
+
+    // Named once in extensionsUsed and once on the material, and nowhere else.
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(count_of(json.str_view(), `"CUSTOM_materials_layers"`) == 2,
+        "declared once and used once");
+    assert(json.str_view().contains(`,{}]`), "a layer that states nothing writes nothing");
+
+    builder.save_glb("test/out_layers.glb")!!;
+    defer (void)file::delete("test/out_layers.glb");
+
+    GltfStream stream = gltf::open("test/out_layers.glb")!!;
+    defer stream.close();
+
+    Material* back = stream.gltf.materials.get_ref(material);
+    assert(back.has_layers());
+    assert(back.layers_ext.layers.len() == 3);
+    assert(back.layers_ext.heightTexture.source == (int)height_image, "the base height map is an image index");
+    assert(near(back.layers_ext.bump.strength, 0.4));
+    assert(near(back.layers_ext.bump.distance, 2.0));
+
+    MaterialLayer first = back.layers_ext.layers[0];
+    assert(first.name == "rock");
+    assert(first.blend_mode == LayerBlendMode.MULTIPLY);
+    assert(near(first.baseColorFactor.x, 0.2) && near(first.baseColorFactor.w, 0.5));
+    assert(near(first.metallicFactor, 0.25));
+    assert(near(first.opacity, 0.75), "the opacity beside the alpha, not folded into it");
+    assert(first.baseColorTexture.source == (int)splat_image);
+    assert(first.mask.source == LayerMaskSource.TEXTURE);
+    assert(first.mask.channel == LayerMaskChannel.G);
+    assert(first.mask.texture.source == (int)splat_image);
+    assert(first.mask.invert);
+
+    MaterialLayer second = back.layers_ext.layers[1];
+    assert(second.name == "moss");
+    assert(second.blend_mode == LayerBlendMode.SCREEN);
+    assert(second.mask.source == LayerMaskSource.VERTEX_COLOR);
+    assert(second.mask.channel == LayerMaskChannel.B);
+    assert(second.mask.attribute == "COLOR_1");
+    assert(!second.mask.invert);
+    assert(near(second.emissiveFactor.z, 0.3));
+    assert(near(second.subsurface.weight, 0.5) && near(second.subsurface.radius.y, 0.5));
+    assert(!second.enabled, "a disabled layer stays disabled");
+
+    MaterialLayer third = back.layers_ext.layers[2];
+    assert(third.name.len == 0);
+    assert(third.enabled && near(third.opacity, 1.0));
+    assert(third.blend_mode == LayerBlendMode.MIX);
+    assert(third.mask.source == LayerMaskSource.NONE);
+    assert(third.mask.channel == LayerMaskChannel.R);
+    assert(near(third.baseColorFactor.x, 1.0) && near(third.baseColorFactor.w, 1.0));
+    assert(near(third.metallicFactor, 1.0) && near(third.roughnessFactor, 1.0));
+    assert(third.baseColorTexture.source == -1 && third.normalTexture.source == -1);
+    assert(near(third.bump.strength, 1.0) && near(third.bump.distance, 1.0));
+}
+
+// A material carrying no layers writes no extensions object, and a document
+// with no layered material anywhere does not declare the extension. The absent
+// case is the one every material in every other test takes, so it is worth one
+// check of its own rather than being assumed by all of them.
+fn void test_a_material_without_layers_declares_nothing() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    builder.add_material("plain");
+    builder.add_root(builder.add_node("plain"));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(!json.str_view().contains("CUSTOM_materials_layers"));
+    assert(!json.str_view().contains(`"extensions"`));
+}
+
+// The maps beyond the base colour, and a transform on one of them.
+//
+// All four textureInfos go through one emitter, so the transform is checked on
+// the base colour and the scalars on the two that carry one — between them that
+// covers every branch the emitter has.
+fn void test_write_material_maps() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    char[3] bytes = { 1, 2, 3 };
+    uint albedo = builder.add_texture(builder.add_image("albedo", bytes[..], ImageType.IMAGE_PNG));
+    uint normal = builder.add_texture(builder.add_image("normal", bytes[..], ImageType.IMAGE_PNG));
+    uint ao = builder.add_texture(builder.add_image("ao", bytes[..], ImageType.IMAGE_PNG));
+    uint glow = builder.add_texture(builder.add_image("glow", bytes[..], ImageType.IMAGE_PNG));
+
+    // A tiling floor: one image repeated four times across the surface.
+    WriteTextureRef tiled = gltf::texture_ref((int)albedo);
+    tiled.scale = { 4, 4 };
+    tiled.offset = { 0.25, 0.5 };
+
+    uint material = builder.add_material("floor", base_color_texture: tiled, double_sided: true);
+    builder.set_material_maps(
+        material,
+        normal: gltf::texture_ref((int)normal), normal_scale: 0.5,
+        occlusion: gltf::texture_ref((int)ao), occlusion_strength: 0.75,
+        emissive: gltf::texture_ref((int)glow), emissive_factor: { 0.1, 0.2, 0.3 }
+    );
+
+    builder.add_root(builder.add_node("floor"));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(json.str_view().contains(`"KHR_texture_transform"`), "a transform declares the extension");
+    assert(json.str_view().contains(`"scale":0.5`), "the normal scale is written when it is not 1");
+    assert(json.str_view().contains(`"strength":0.75`), "and so is the occlusion strength");
+    assert(json.str_view().contains(`"doubleSided":true`));
+
+    builder.save_glb("test/out_maps.glb")!!;
+    defer (void)file::delete("test/out_maps.glb");
+
+    GltfStream stream = gltf::open("test/out_maps.glb")!!;
+    defer stream.close();
+
+    Material back = stream.gltf.materials[material];
+    assert(back.doubleSided);
+    // Every source comes back as an *image* index, the parser having resolved it
+    // through the textures array — the asymmetry WriteTextureRef exists for.
+    assert(back.normalTexture.source == 1);
+    assert(back.occlusionTexture.source == 2);
+    assert(back.emissiveTexture.source == 3);
+    assert(near(back.emissiveFactor.x, 0.1) && near(back.emissiveFactor.z, 0.3));
+
+    // The transform rode across on the base colour and nowhere else.
+    assert(near(back.baseColorTexture.scale.x, 4) && near(back.baseColorTexture.scale.y, 4));
+    assert(near(back.baseColorTexture.offset.x, 0.25) && near(back.baseColorTexture.offset.y, 0.5));
+    assert(near(back.normalTexture.scale.x, 1) && near(back.normalTexture.scale.y, 1));
+}
+
+// An untransformed material declares no KHR_texture_transform. The extension is
+// declared per document, so one identity transform written out of habit would
+// make every file claim an extension it does not use.
+fn void test_no_transform_declares_no_extension() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    char[3] bytes = { 1, 2, 3 };
+    uint texture = builder.add_texture(builder.add_image("t", bytes[..], ImageType.IMAGE_PNG));
+    builder.add_material("plain", base_color_texture: gltf::texture_ref((int)texture));
+    builder.add_root(builder.add_node("plain"));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(!json.str_view().contains("KHR_texture_transform"));
+    assert(json.str_view().contains(`"baseColorTexture":{"index":0}`), "just the index");
+}
+
+// A camera and a directional light, which is what makes an exported scene open
+// framed and lit rather than framed by whatever the viewer guessed.
+fn void test_write_camera_and_light() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    uint camera = builder.add_camera("eye", 0.785398, 0.01, zfar: 500);
+    uint light = builder.add_light("sun", LightType.DIRECTIONAL, { 1, 0.9, 0.8 }, intensity: 2.5);
+
+    uint camera_node = builder.add_node("eye", translation: { 0, 2, 5 });
+    builder.set_node_camera(camera_node, camera);
+    builder.add_root(camera_node);
+
+    uint light_node = builder.add_node("sun");
+    builder.set_node_light(light_node, light);
+    builder.add_root(light_node);
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    // The lights live at the document level and a node names one by index; the
+    // camera is core glTF and needs no extension at all.
+    assert(count_of(json.str_view(), `"KHR_lights_punctual"`) == 3,
+        "declared, the document array, and the node that names it");
+    assert(!json.str_view().contains(`"aspectRatio"`), "unstated, so a viewer uses its own viewport");
+
+    builder.save_glb("test/out_camera.glb")!!;
+    defer (void)file::delete("test/out_camera.glb");
+
+    GltfStream stream = gltf::open("test/out_camera.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.cameras.len() == 1);
+    Camera back = stream.gltf.cameras[0];
+    assert(back.type == CameraType.PERSPECTIVE);
+    assert(near(back.perspective.yfov, 0.785398));
+    assert(near(back.perspective.znear, 0.01));
+    assert(near(back.perspective.zfar, 500));
+    assert(stream.gltf.nodes[camera_node].has_camera());
+
+    assert(stream.gltf.lights.len() == 1);
+    Light lit = stream.gltf.lights[0];
+    assert(lit.type == LightType.DIRECTIONAL);
+    assert(near(lit.intensity, 2.5), "an intensity of zero is a light that is off");
+    assert(near(lit.color[1], 0.9));
+    assert(stream.gltf.nodes[light_node].light == 0);
+}
