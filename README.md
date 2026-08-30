@@ -10,7 +10,7 @@ A glTF 2.0 parser and writer for C3 with support for both `.gltf` and `.glb` fil
 * Skin animations (skeletal)
 * Bounding box (AABB) computation
 * Scene graph traversal
-* Writing `.glb` and self-contained `.gltf`, including skeletons and skin weights
+* Writing `.glb` and self-contained `.gltf`, including skeletons, skin weights and morph targets
 
 ### Extensions
 
@@ -223,6 +223,7 @@ Data helpers cover the common accessor types — `add_positions` (which also
 records the min/max bounds glTF requires), `add_vec2`, `add_vec3`, `add_vec4`,
 `add_indices`, `add_matrices`, `add_joints` and `add_weights`. Indices and
 joint indices are automatically narrowed to the smallest type that fits.
+
 
 ### Writing a rigged mesh
 

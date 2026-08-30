@@ -33,6 +33,12 @@
  `set_extra`, which writes the root `extras` object the parser reads back into
  `Gltf.extras`.
 
+ Morph targets hang off the primitive rather than the mesh —
+ `add_morph_target` per primitive, `set_mesh_weights` and `set_target_names`
+ per mesh, matching where glTF puts each of the three. A clip drives them
+ through the same samplers as anything else: `add_weight_keys` for the output,
+ and a channel whose path is `WEIGHTS`.
+
  See skinning.c3 for the skeleton, weights and inverse bind matrices a rigged
  asset needs on top of this.
 *>
@@ -195,9 +201,24 @@ struct WriteAttribute
 	uint accessor;
 }
 
+<*
+ One morph target of a primitive: a displacement per vertex, named the way a
+ vertex attribute is — POSITION, NORMAL, TANGENT.
+
+ A struct rather than a bare list because a primitive holds a `List` of them,
+ and ordered for `WriteAttribute`'s reason one level up. **Here the order is the
+ addressing**: a weight names a target by its index in this list and by nothing
+ else, so a reordering is not a cosmetic difference, it is a different file.
+*>
+struct WriteMorphTarget
+{
+	List{WriteAttribute} attributes;
+}
+
 struct WritePrimitive
 {
 	List{WriteAttribute} attributes;
+	List{WriteMorphTarget} targets;
 	int indices;
 	int material;
 	Mode mode;
@@ -207,6 +228,12 @@ struct WriteMesh
 {
 	String name;
 	List{WritePrimitive} primitives;
+	// The weight each target starts at, and the names they go by. Both hang off
+	// the mesh rather than off a primitive, because glTF's targets do: a mesh's
+	// primitives carry one target list between them, so one weight moves the
+	// same shape across every primitive at once.
+	List{float} weights;
+	List{String} target_names;
 }
 
 struct WriteNode
@@ -572,8 +599,17 @@ fn void GltfBuilder.free(&self)
 		{
 			foreach (attribute : primitive.attributes) attribute.name.free(self.allocator);
 			primitive.attributes.free();
+			foreach (target : primitive.targets)
+			{
+				foreach (attribute : target.attributes) attribute.name.free(self.allocator);
+				target.attributes.free();
+			}
+			primitive.targets.free();
 		}
 		mesh.primitives.free();
+		foreach (name : mesh.target_names) name.free(self.allocator);
+		mesh.target_names.free();
+		mesh.weights.free();
 		mesh.name.free(self.allocator);
 	}
 	self.meshes.free();
@@ -942,6 +978,29 @@ fn uint GltfBuilder.add_vectors(&self, Vec3[] data)
 	return self.add_accessor(self.end_view(offset), FLOAT, VEC3, (uint)data.len);
 }
 
+<*
+ Weight keys for a WEIGHTS channel — every target's weight at the first key
+ time, then every target's weight at the second, and so on.
+
+ One flat run of scalars rather than a value per key, because this is the one
+ sampler output glTF does not size by the key count: a channel driving a mesh
+ with three targets writes three floats per key, and a reader recovers the
+ stride by asking the mesh how many targets it has.
+
+ No bounds. glTF requires them of a sampler's *input* and of POSITION, and a
+ weight is neither, so `add_times` is not the accessor to reach for here even
+ though it would write the same bytes.
+
+ @param data : `keys * targets floats, all of one key together.`
+ @return `The accessor index to pass to add_sampler as its output.`
+*>
+fn uint GltfBuilder.add_weight_keys(&self, float[] data)
+{
+	sz offset = self.begin_view();
+	foreach (value : data) self.append_f32(value);
+	return self.add_accessor(self.end_view(offset), FLOAT, SCALAR, (uint)data.len);
+}
+
 // --- Scene graph ---
 
 fn uint GltfBuilder.add_mesh(&self, String name)
@@ -949,6 +1008,8 @@ fn uint GltfBuilder.add_mesh(&self, String name)
 	WriteMesh mesh;
 	mesh.name = name.copy(self.allocator);
 	mesh.primitives.init(self.allocator);
+	mesh.weights.init(self.allocator);
+	mesh.target_names.init(self.allocator);
 	self.meshes.push(mesh);
 	return (uint)self.meshes.len() - 1;
 }
@@ -960,11 +1021,13 @@ fn uint GltfBuilder.add_mesh(&self, String name)
  @param attributes : `Named accessor indices — at minimum POSITION.`
  @param indices : `Accessor index for the index buffer, or -1 for a non-indexed draw.`
  @param material : `Material index, or -1 for none.`
+ @return `The primitive index within this mesh, for add_morph_target.`
 *>
-fn void GltfBuilder.add_primitive(&self, uint mesh, WriteAttribute[] attributes, int indices = -1, int material = -1, Mode mode = TRIANGLES)
+fn uint GltfBuilder.add_primitive(&self, uint mesh, WriteAttribute[] attributes, int indices = -1, int material = -1, Mode mode = TRIANGLES)
 {
 	WritePrimitive primitive;
 	primitive.attributes.init(self.allocator);
+	primitive.targets.init(self.allocator);
 	primitive.indices = indices;
 	primitive.material = material;
 	primitive.mode = mode;
@@ -974,7 +1037,92 @@ fn void GltfBuilder.add_primitive(&self, uint mesh, WriteAttribute[] attributes,
 		primitive.attributes.push({ .name = attribute.name.copy(self.allocator), .accessor = attribute.accessor });
 	}
 
-	self.meshes.get_ref(mesh).primitives.push(primitive);
+	WriteMesh* target = self.meshes.get_ref(mesh);
+	target.primitives.push(primitive);
+	return (uint)target.primitives.len() - 1;
+}
+
+// --- Morph targets ---
+
+<*
+ Attach a morph target to a primitive.
+
+ A target is a set of **displacements**, not positions: the vertex a reader
+ draws is the base attribute plus every target's value scaled by that target's
+ weight. That is what composes — a face can smile and blink at once, which
+ absolute positions cannot do — and it is why the accessor passed here holds
+ deltas even though it is spelled POSITION.
+
+ POSITION, NORMAL and TANGENT are the three glTF defines. A target's POSITION
+ accessor still wants the min/max bounds `add_positions` writes: the spec asks
+ for them on every POSITION, and a validator will say so.
+
+ **Three counts have to agree and none is checked here**, for the reason
+ `add_instancing` gives at greater length — the caller built the arrays and
+ knows them, and a builder that second-guessed could only refuse silently or
+ crash. They are: a target's accessors are as long as the primitive's own
+ POSITION; every primitive of one mesh has the same number of targets in the
+ same order, since the weights are the mesh's and address them by index; and
+ `set_mesh_weights` is given exactly that many weights.
+
+ @param mesh : `Index returned by add_mesh.`
+ @param primitive : `Index returned by add_primitive on that same mesh.`
+ @param attributes : `Named accessor indices of the displacements — at minimum POSITION.`
+ @return `The target index, which is what a weight addresses it by.`
+*>
+fn uint GltfBuilder.add_morph_target(&self, uint mesh, uint primitive, WriteAttribute[] attributes)
+{
+	WriteMorphTarget target;
+	target.attributes.init(self.allocator);
+	foreach (attribute : attributes)
+	{
+		target.attributes.push({ .name = attribute.name.copy(self.allocator), .accessor = attribute.accessor });
+	}
+
+	WritePrimitive* into = self.meshes.get_ref(mesh).primitives.get_ref(primitive);
+	into.targets.push(target);
+	return (uint)into.targets.len() - 1;
+}
+
+<*
+ The weight each of the mesh's targets starts at.
+
+ Defaults, not an animation: a WEIGHTS channel overwrites them the moment a clip
+ plays. They are what a reader shows of a mesh nothing is driving, so a file
+ whose plant should open at half its bloom says so here.
+
+ As many weights as the mesh has targets. Calling this twice replaces the set
+ rather than extending it, matching `add_instancing`.
+
+ @param mesh : `Index returned by add_mesh.`
+*>
+fn void GltfBuilder.set_mesh_weights(&self, uint mesh, float[] weights)
+{
+	WriteMesh* target = self.meshes.get_ref(mesh);
+	target.weights.clear();
+	foreach (weight : weights) target.weights.push(weight);
+}
+
+<*
+ Name the mesh's morph targets, in the order `add_morph_target` added them.
+
+ Written as `mesh.extras.targetNames`, which is where every tool that shows a
+ blend shape by name looks and is a convention rather than a field the format
+ defines — so it is optional here, and a target without one is still addressed
+ by its index. **This library's own parser does not read it back**: `Mesh` keeps
+ no extras, so what survives a round trip through it is the index. The names are
+ written for the tools on the other side of the file.
+
+ Calling this twice replaces the set.
+
+ @param mesh : `Index returned by add_mesh.`
+*>
+fn void GltfBuilder.set_target_names(&self, uint mesh, String[] names)
+{
+	WriteMesh* target = self.meshes.get_ref(mesh);
+	foreach (name : target.target_names) name.free(self.allocator);
+	target.target_names.clear();
+	foreach (name : names) target.target_names.push(name.copy(self.allocator));
 }
 
 <*
@@ -2397,9 +2545,40 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				if (primitive.material >= 0) o.appendf(`,"material":%d`, primitive.material)!!;
 				// 4 (TRIANGLES) is the glTF default and is left implicit.
 				if (primitive.mode != TRIANGLES) o.appendf(`,"mode":%d`, primitive.mode.ordinal)!!;
+				if (primitive.targets.len() > 0)
+				{
+					o.append_string(`,"targets":[`);
+					foreach (t, target : primitive.targets)
+					{
+						if (t > 0) o.append_char(',');
+						o.append_char('{');
+						foreach (n, delta : target.attributes)
+						{
+							if (n > 0) o.append_char(',');
+							append_json_string(o, delta.name);
+							o.appendf(":%d", delta.accessor)!!;
+						}
+						o.append_char('}');
+					}
+					o.append_char(']');
+				}
 				o.append_char('}');
 			}
-			o.append_string("]}");
+			o.append_char(']');
+			if (mesh.weights.len() > 0)
+			{
+				o.append_string(`,"weights":`);
+				append_json_floats(o, mesh.weights.array_view());
+			}
+			// The one extras object this writer produces below the root, and the
+			// only place a target's name can go — see set_target_names.
+			if (mesh.target_names.len() > 0)
+			{
+				o.append_string(`,"extras":{"targetNames":`);
+				append_json_strings(o, &mesh.target_names);
+				o.append_char('}');
+			}
+			o.append_char('}');
 		}
 		o.append_char(']');
 	}

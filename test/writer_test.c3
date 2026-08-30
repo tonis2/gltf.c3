@@ -1132,3 +1132,149 @@ fn void test_write_camera_and_light() {
     assert(near(lit.color[1], 0.9));
     assert(stream.gltf.nodes[light_node].light == 0);
 }
+
+// Morph targets: the displacements, the weights they start at and the names the
+// tool on the other side of the file shows. Two targets on one primitive,
+// because one would not prove the order survived, and the order is the only
+// thing a weight has to address a target by.
+fn void test_write_morph_targets() {
+    Vec3[3] positions = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };
+    Vec3[3] grow = { { 0, 0.5, 0 }, { 0, 0.5, 0 }, { 0, 2, 0 } };
+    Vec3[3] bloom = { { 0.25, 0, 0 }, { -0.25, 0, 0 }, { 0, 0, 0.75 } };
+    Vec3[3] bloom_normals = { { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 } };
+    uint[3] indices = { 0, 1, 2 };
+
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    WriteAttribute[1] base = { { .name = "POSITION", .accessor = builder.add_positions(positions[..]) } };
+    uint mesh = builder.add_mesh("Flower");
+    uint primitive = builder.add_primitive(mesh, base[..], indices: (int)builder.add_indices(indices[..]));
+
+    WriteAttribute[1] grow_delta = { { .name = "POSITION", .accessor = builder.add_positions(grow[..]) } };
+    WriteAttribute[2] bloom_delta = {
+        { .name = "POSITION", .accessor = builder.add_positions(bloom[..]) },
+        { .name = "NORMAL", .accessor = builder.add_vec3(bloom_normals[..]) },
+    };
+    assert(builder.add_morph_target(mesh, primitive, grow_delta[..]) == 0);
+    assert(builder.add_morph_target(mesh, primitive, bloom_delta[..]) == 1);
+
+    float[2] weights = { 1, 0.25 };
+    String[2] names = { "grow", "bloom" };
+    builder.set_mesh_weights(mesh, weights[..]);
+    builder.set_target_names(mesh, names[..]);
+    builder.add_root(builder.add_node("Flower", mesh: (int)mesh));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    // targetNames is an extras convention this library's own parser keeps no
+    // room for, so the JSON is the only place it can be checked.
+    assert(json.str_view().contains(`"extras":{"targetNames":["grow","bloom"]}`));
+
+    builder.save_glb("test/out_morph.glb")!!;
+    defer (void)file::delete("test/out_morph.glb");
+
+    GltfStream stream = gltf::open("test/out_morph.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    Mesh back = stream.gltf.meshes[0];
+    assert(back.weights.len() == 2, "the defaults a reader shows before a clip plays");
+    assert(near(back.weights[0], 1) && near(back.weights[1], 0.25));
+
+    Primitive shape = back.primitives[0];
+    assert(shape.targets.len() == 2);
+    // A target with no NORMAL leaves the base mesh's normals alone and one with
+    // it moves them; the two have to stay told apart.
+    assert(shape.targets[0].len() == 1, "grow moves positions only");
+    assert(shape.targets[1].len() == 2, "bloom moves normals too");
+
+    stream.@each_morph_position(shape, 0; Vec3 delta, sz i) {
+        assert(delta.x == grow[i].x && delta.y == grow[i].y && delta.z == grow[i].z);
+    }!!;
+    stream.@each_morph_position(shape, 1; Vec3 delta, sz i) {
+        assert(delta.x == bloom[i].x && delta.y == bloom[i].y && delta.z == bloom[i].z);
+    }!!;
+
+    // Bounds on a target's POSITION for the reason they are on the base mesh's:
+    // the spec asks for them wherever the attribute is spelled POSITION, and a
+    // displacement is still spelled POSITION.
+    Accessor delta_bounds = stream.gltf.accessors[shape.targets[0].get("POSITION")!!];
+    assert(near(delta_bounds.max[1], 2) && near(delta_bounds.min[0], 0));
+}
+
+// A clip driving the weights. AnimationProperty.WEIGHTS has been spelled since
+// the parser was written and had nothing to point at — a mesh with no targets
+// has no weights to move — so this is the first channel of its kind the library
+// can write.
+fn void test_write_morph_animation() {
+    Vec3[3] positions = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };
+    Vec3[3] open = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 1, 0 } };
+    Vec3[3] lean = { { 0, 0, 0.5 }, { 0, 0, 0.5 }, { 0, 0, 0.5 } };
+
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    WriteAttribute[1] base = { { .name = "POSITION", .accessor = builder.add_positions(positions[..]) } };
+    uint mesh = builder.add_mesh("Sprout");
+    uint primitive = builder.add_primitive(mesh, base[..]);
+
+    WriteAttribute[1] open_delta = { { .name = "POSITION", .accessor = builder.add_positions(open[..]) } };
+    WriteAttribute[1] lean_delta = { { .name = "POSITION", .accessor = builder.add_positions(lean[..]) } };
+    builder.add_morph_target(mesh, primitive, open_delta[..]);
+    builder.add_morph_target(mesh, primitive, lean_delta[..]);
+
+    uint node = builder.add_node("Sprout", mesh: (int)mesh);
+    builder.add_root(node);
+
+    float[3] times = { 0, 0.5, 1 };
+    // Two targets and three keys is six floats, not three: both weights at t=0,
+    // then both at 0.5, then both at 1.
+    float[6] keys = { 0, 0, 1, 0, 1, 1 };
+    uint animation = builder.add_animation("bloom");
+    uint sampler = builder.add_sampler(animation, builder.add_times(times[..]), builder.add_weight_keys(keys[..]));
+    builder.add_channel(animation, sampler, node, AnimationProperty.WEIGHTS);
+
+    builder.save_glb("test/out_morph_clip.glb")!!;
+    defer (void)file::delete("test/out_morph_clip.glb");
+
+    GltfStream stream = gltf::open("test/out_morph_clip.glb")!!;
+    defer stream.close();
+    stream.load_all_buffers()!!;
+
+    Animation clip = stream.gltf.animations[0];
+    assert(clip.name == "bloom");
+    assert(near(clip.max_time, 1), "the duration, read off the sampler's input bounds");
+    assert(clip.channels[0].target.path == AnimationProperty.WEIGHTS);
+    assert(clip.channels[0].target.node == node);
+
+    // The output is as long as keys times targets, and scalar. A reader that
+    // sized it by the key count would run off the end of two thirds of it.
+    Accessor output = stream.gltf.accessors[clip.samplers[0].output];
+    assert(output.count == 6);
+    assert(output.type == AccessorType.SCALAR);
+    for (uint i = 0; i < 6; i++) {
+        assert(near(stream.@cast_buffer(output, i, float), keys[i]));
+    }
+}
+
+// A mesh with no targets writes none of the three keys. An empty "targets":[]
+// is a mesh a validator rejects outright, and "weights":[] is a set of defaults
+// for nothing.
+fn void test_no_morph_targets_writes_no_keys() {
+    Vec3[3] positions = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };
+
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    WriteAttribute[1] base = { { .name = "POSITION", .accessor = builder.add_positions(positions[..]) } };
+    uint mesh = builder.add_mesh("Plain");
+    builder.add_primitive(mesh, base[..]);
+    builder.add_root(builder.add_node("Plain", mesh: (int)mesh));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(!json.str_view().contains(`"targets"`));
+    assert(!json.str_view().contains(`"weights"`));
+    assert(!json.str_view().contains(`"extras"`));
+}
