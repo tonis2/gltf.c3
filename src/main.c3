@@ -503,6 +503,15 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	Object*? matrix = json.get("matrix");
 	Object*? children = json.get("children");
 
+	// The node's own morph weights, overriding the mesh's. Declared and freed here
+	// since `Node` was written and never actually read, which made every reader of
+	// this library see a copy wearing the shape's defaults instead of its own.
+	Object*? weights = json.get("weights");
+	if (try weights)
+	{
+		foreach (weight : weights.array) self.weights.push((float)@num(weight));
+	}
+
 	read_extras(&self.extras, json);
 
 	@when_extended(json, PUNCTUAL_LIGHT_EXTENSION ; Object* extension)

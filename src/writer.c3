@@ -256,6 +256,9 @@ struct WriteNode
 	// Index into GltfBuilder.lights, or -1 — KHR_lights_punctual, held as a slot
 	// for `physics`'s reason.
 	int light;
+	// This node's morph weights, overriding the mesh's own. Empty on almost every
+	// node, which is why it is a list rather than a slot: see set_node_weights.
+	List{float} weights;
 	List{uint} children;
 }
 
@@ -617,6 +620,7 @@ fn void GltfBuilder.free(&self)
 	foreach (node : self.nodes)
 	{
 		node.children.free();
+		node.weights.free();
 		node.name.free(self.allocator);
 	}
 	self.nodes.free();
@@ -1104,6 +1108,28 @@ fn void GltfBuilder.set_mesh_weights(&self, uint mesh, float[] weights)
 }
 
 <*
+ This node's morph weights, overriding the mesh's.
+
+ **The per-copy channel, and the only one glTF has for a blend shape.** A mesh's
+ weights belong to the shape and so to every node drawing it; these belong to the
+ node. Two copies of one head wearing two expressions are therefore two nodes
+ over one mesh — the same arrangement a per-copy colour needs, and unlike a
+ colour there is no instancing attribute to fold it into, so a copy carrying
+ these cannot also be an instance of something.
+
+ As many weights as the mesh the node draws has targets. Calling this twice
+ replaces the set.
+
+ @param node : `Index returned by add_node.`
+*>
+fn void GltfBuilder.set_node_weights(&self, uint node, float[] weights)
+{
+	WriteNode* target = self.nodes.get_ref(node);
+	target.weights.clear();
+	foreach (weight : weights) target.weights.push(weight);
+}
+
+<*
  Name the mesh's morph targets, in the order `add_morph_target` added them.
 
  Written as `mesh.extras.targetNames`, which is where every tool that shows a
@@ -1143,6 +1169,7 @@ fn uint GltfBuilder.add_node(&self, String name, int mesh = -1, int skin = -1,
 	node.instancing = -1;
 	node.camera = -1;
 	node.light = -1;
+	node.weights.init(self.allocator);
 	node.children.init(self.allocator);
 	self.nodes.push(node);
 	return (uint)self.nodes.len() - 1;
@@ -2437,6 +2464,13 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 			{
 				if (!first) o.append_char(',');
 				o.appendf(`"skin":%d`, node.skin)!!;
+				first = false;
+			}
+			if (node.weights.len() > 0)
+			{
+				if (!first) o.append_char(',');
+				o.append_string(`"weights":`);
+				append_json_floats(o, node.weights.array_view());
 				first = false;
 			}
 			if (node.camera >= 0)

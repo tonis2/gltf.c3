@@ -1163,10 +1163,17 @@ fn void test_write_morph_targets() {
     String[2] names = { "grow", "bloom" };
     builder.set_mesh_weights(mesh, weights[..]);
     builder.set_target_names(mesh, names[..]);
-    builder.add_root(builder.add_node("Flower", mesh: (int)mesh));
+
+    uint node = builder.add_node("Flower", mesh: (int)mesh);
+    builder.add_root(node);
+    // The per-copy channel over the top of the mesh's defaults: this one node is
+    // wearing something the shape does not default to.
+    float[2] worn = { 0.75, 0.5 };
+    builder.set_node_weights(node, worn[..]);
 
     DString json = builder.to_json(mem);
     defer json.free();
+    assert(json.str_view().contains(`"weights":[0.75,0.5]`), "the node's own weights");
     // targetNames is an extras convention this library's own parser keeps no
     // room for, so the JSON is the only place it can be checked.
     assert(json.str_view().contains(`"extras":{"targetNames":["grow","bloom"]}`));
@@ -1181,6 +1188,12 @@ fn void test_write_morph_targets() {
     Mesh back = stream.gltf.meshes[0];
     assert(back.weights.len() == 2, "the defaults a reader shows before a clip plays");
     assert(near(back.weights[0], 1) && near(back.weights[1], 0.25));
+
+    // And the node's override beside them, which is what a second copy of one
+    // shape needs to wear a different expression.
+    Node wearer = stream.gltf.nodes[0];
+    assert(wearer.weights.len() == 2);
+    assert(near(wearer.weights[0], 0.75) && near(wearer.weights[1], 0.5));
 
     Primitive shape = back.primitives[0];
     assert(shape.targets.len() == 2);
