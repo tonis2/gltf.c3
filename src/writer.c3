@@ -227,6 +227,10 @@ struct WritePrimitive
 struct WriteMesh
 {
 	String name;
+	// What the shape itself is called, when that is not what the mesh is called
+	// — see `set_geometry_name`. Empty on a mesh whose name already says it,
+	// which is most of them.
+	String geometry_name;
 	List{WritePrimitive} primitives;
 	// The weight each target starts at, and the names they go by. Both hang off
 	// the mesh rather than off a primitive, because glTF's targets do: a mesh's
@@ -614,6 +618,7 @@ fn void GltfBuilder.free(&self)
 		mesh.target_names.free();
 		mesh.weights.free();
 		mesh.name.free(self.allocator);
+		if (mesh.geometry_name.len > 0) mesh.geometry_name.free(self.allocator);
 	}
 	self.meshes.free();
 
@@ -1127,6 +1132,50 @@ fn void GltfBuilder.set_node_weights(&self, uint node, float[] weights)
 	WriteNode* target = self.nodes.get_ref(node);
 	target.weights.clear();
 	foreach (weight : weights) target.weights.push(weight);
+}
+
+<*
+ Rename a mesh after it was added.
+
+ `add_mesh` takes the name a writer knows at the time it needs the index, and a
+ writer that only learns the right one later — from how many things ended up
+ drawing the mesh, say — would otherwise have to buffer every primitive to say
+ it. The index is unchanged, so everything that already points at this mesh
+ still does.
+
+ @param mesh : `Index returned by add_mesh.`
+*>
+fn void GltfBuilder.set_mesh_name(&self, uint mesh, String name)
+{
+	WriteMesh* target = self.meshes.get_ref(mesh);
+	target.name.free(self.allocator);
+	target.name = name.copy(self.allocator);
+}
+
+<*
+ What the *shape* is called, when the mesh is called something else.
+
+ glTF names meshes and primitives and has no third slot for the geometry inside
+ one, so a writer that names a mesh after the thing that draws it — the usual
+ wish, since that is the name somebody will look the piece up by — has nowhere
+ left to say what the shape itself was. This is that slot:
+ `mesh.extras.geometryName`, beside `targetNames` and a convention in exactly
+ the same way.
+
+ Skip it when the two agree; an extras object repeating the mesh's own name is
+ bytes on every mesh in the document saying nothing. Passing an empty name
+ clears it.
+
+ **This library's own parser does not read it back**, for `set_target_names`'
+ reason: `Mesh` keeps no extras.
+
+ @param mesh : `Index returned by add_mesh.`
+*>
+fn void GltfBuilder.set_geometry_name(&self, uint mesh, String name)
+{
+	WriteMesh* target = self.meshes.get_ref(mesh);
+	if (target.geometry_name.len > 0) target.geometry_name.free(self.allocator);
+	target.geometry_name = name.len > 0 ? name.copy(self.allocator) : (String){};
 }
 
 <*
@@ -2605,11 +2654,22 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				append_json_floats(o, mesh.weights.array_view());
 			}
 			// The one extras object this writer produces below the root, and the
-			// only place a target's name can go — see set_target_names.
-			if (mesh.target_names.len() > 0)
+			// only place a target's name or a geometry's can go — see
+			// set_target_names and set_geometry_name.
+			if (mesh.target_names.len() > 0 || mesh.geometry_name.len > 0)
 			{
-				o.append_string(`,"extras":{"targetNames":`);
-				append_json_strings(o, &mesh.target_names);
+				o.append_string(`,"extras":{`);
+				if (mesh.geometry_name.len > 0)
+				{
+					o.append_string(`"geometryName":`);
+					append_json_string(o, mesh.geometry_name);
+					if (mesh.target_names.len() > 0) o.append_char(',');
+				}
+				if (mesh.target_names.len() > 0)
+				{
+					o.append_string(`"targetNames":`);
+					append_json_strings(o, &mesh.target_names);
+				}
 				o.append_char('}');
 			}
 			o.append_char('}');
