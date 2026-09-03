@@ -33,6 +33,11 @@ const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
 const TEXTURE_BASISU_EXTENSION      = "KHR_texture_basisu";
 const ANIMATION_POINTER_EXTENSION   = "KHR_animation_pointer";
 const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
+// Ours, like CUSTOM_materials_layers beside it, and it means BCn blocks in a
+// KTX2. The sibling above means the other thing a KTX2 can hold — ETC1S or
+// UASTC — so which of the two a `.glb` declares is a question about the bytes
+// and not about the mime type. `GltfBuilder.use_extension` is that door.
+const TEXTURE_KTX2_EXTENSION        = "CUSTOM_texture_ktx2";
 const IMPLICIT_SHAPES_EXTENSION     = "KHR_implicit_shapes";
 const RIGID_BODIES_EXTENSION        = "KHR_physics_rigid_bodies";
 

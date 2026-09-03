@@ -398,6 +398,14 @@ struct WriteImage
 	ImageType mime;
 }
 
+// An extension name the document declares because a caller said so — see
+// `GltfBuilder.use_extension` for the ones the writer cannot work out itself.
+struct WriteExtension
+{
+	String name;
+	bool required;
+}
+
 struct WriteTexture
 {
 	uint source;
@@ -558,6 +566,9 @@ struct GltfBuilder
 	List{WriteNodePhysics} node_physics;
 	List{WriteInstancing} instancing;
 
+	// Extensions a caller declared by name, for what the writer cannot infer.
+	List{WriteExtension} extensions;
+
 	String generator;
 }
 
@@ -590,6 +601,7 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.physics_joints.init(allocator);
 	self.node_physics.init(allocator);
 	self.instancing.init(allocator);
+	self.extensions.init(allocator);
 	self.generator = "gltf.c3";
 	return self;
 }
@@ -688,6 +700,9 @@ fn void GltfBuilder.free(&self)
 	foreach (image : self.images) image.name.free(self.allocator);
 	self.images.free();
 	self.textures.free();
+
+	foreach (extension : self.extensions) extension.name.free(self.allocator);
+	self.extensions.free();
 
 	foreach (material : self.materials) material.name.free(self.allocator);
 	self.materials.free();
@@ -1482,6 +1497,40 @@ fn bool GltfBuilder.any_texture_transform(&self)
 	}
 	return self.any_layer_texture_transform();
 }
+
+<*
+ Declares an extension this document uses, by name.
+
+ The escape hatch from "the writer works out which extensions apply", and it
+ exists because for some of them the writer cannot. Every extension above is
+ decided by something the builder holds — a light, an instancing block, a
+ transformed textureInfo — but an `image/ktx2` may be BCn blocks or Basis, and
+ those are two different extensions told apart by bytes the builder was handed
+ and never looked inside. Guessing from the mime type gets one of the two wrong,
+ and a wrong extension name is worse than none: a reader acts on it.
+
+ So whoever produced the bytes says which one it is. Named once however many
+ times it is declared, and `required` is sticky — an extension declared both
+ ways is required, since one caller's image really does depend on it.
+
+ @param name : `The extension's own name. Copied, so a temporary is fine.`
+ @param required : `Whether a reader that does not know it should refuse the file rather than render it wrong.`
+*>
+fn void GltfBuilder.use_extension(&self, String name, bool required = false)
+{
+	if (name.len == 0) return;
+	foreach (&known : self.extensions)
+	{
+		if (known.name != name) continue;
+		if (required) known.required = true;
+		return;
+	}
+	self.extensions.push({ .name = name.copy(self.allocator), .required = required });
+}
+
+// `use_extension` for the case a file cannot degrade without: the caller is
+// saying a reader which skips this gets a wrong picture rather than a plainer one.
+fn void GltfBuilder.require_extension(&self, String name) => self.use_extension(name, true);
 
 fn void GltfBuilder.add_child(&self, uint parent, uint child) => self.nodes.get_ref(parent).children.push(child);
 
@@ -2341,9 +2390,13 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 	// the one that forgot would write a transform the document does not declare.
 	bool uses_texture_transform = self.any_texture_transform();
 	bool uses_lights = self.lights.len() > 0;
+	// And whatever a caller declared by name. `use_extension` has why that door
+	// exists at all: an `image/ktx2` is CUSTOM_texture_ktx2 or KHR_texture_basisu
+	// depending on bytes this writer never reads.
+	bool uses_declared = self.extensions.len() > 0;
 
 	if (uses_shapes || uses_rigid_bodies || uses_instancing || uses_material_layers
-		|| uses_texture_transform || uses_lights)
+		|| uses_texture_transform || uses_lights || uses_declared)
 	{
 		// A running "something is already there" rather than the pairwise
 		// conditions two extensions got away with. Three is where that stops
@@ -2384,9 +2437,33 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 		{
 			if (written) o.append_char(',');
 			append_json_string(o, PUNCTUAL_LIGHT_EXTENSION);
+			written = true;
+		}
+		foreach (extension : self.extensions)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, extension.name);
+			written = true;
 		}
 		o.append_char(']');
 	}
+
+	// **Required, not merely used.** Every extension above degrades: a reader
+	// that skips KHR_lights_punctual still gets the geometry, and one that skips
+	// EXT_mesh_gpu_instancing gets a single copy. A declared one need not — a
+	// reader that cannot decode a KTX2 renders the material untextured and says
+	// nothing about why — so `require_extension` is how a caller asks for that
+	// reader to refuse the file instead, which is the failure that says what
+	// happened. Nothing is written at all when nothing asked.
+	bool needed = false;
+	foreach (extension : self.extensions)
+	{
+		if (!extension.required) continue;
+		o.append_string(needed ? "," : `,"extensionsRequired":[`);
+		append_json_string(o, extension.name);
+		needed = true;
+	}
+	if (needed) o.append_char(']');
 
 	if (uses_shapes || rigid_body_arrays || uses_lights)
 	{

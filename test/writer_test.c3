@@ -1291,3 +1291,45 @@ fn void test_no_morph_targets_writes_no_keys() {
     assert(!json.str_view().contains(`"weights"`));
     assert(!json.str_view().contains(`"extras"`));
 }
+
+// A declared extension is used, a required one is used and required, and a
+// document that declared none says nothing. Two of these cannot be inferred
+// from anything the builder holds — an `image/ktx2` is CUSTOM_texture_ktx2 or
+// KHR_texture_basisu depending on bytes the writer never reads — which is why
+// the door exists at all. Both can be declared at once, and a name repeated is
+// still one entry.
+fn void test_declared_extensions() {
+    Vec3[3] positions = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } };
+
+    GltfBuilder quiet = gltf::builder();
+    defer quiet.free();
+    WriteAttribute[1] base = { { .name = "POSITION", .accessor = quiet.add_positions(positions[..]) } };
+    uint mesh = quiet.add_mesh("Plain");
+    quiet.add_primitive(mesh, base[..]);
+    quiet.add_root(quiet.add_node("Plain", mesh: (int)mesh));
+
+    DString silent = quiet.to_json(mem);
+    defer silent.free();
+    assert(!silent.str_view().contains(`"extensionsUsed"`));
+    assert(!silent.str_view().contains(`"extensionsRequired"`), "nothing asked, so nothing is demanded of a reader");
+
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+    WriteAttribute[1] attributes = { { .name = "POSITION", .accessor = builder.add_positions(positions[..]) } };
+    uint shape = builder.add_mesh("Plain");
+    builder.add_primitive(shape, attributes[..]);
+    builder.add_root(builder.add_node("Plain", mesh: (int)shape));
+
+    builder.require_extension(gltf::TEXTURE_KTX2_EXTENSION);
+    builder.require_extension(gltf::TEXTURE_KTX2_EXTENSION);
+    builder.require_extension(gltf::TEXTURE_BASISU_EXTENSION);
+    builder.use_extension(gltf::NODE_VISIBILITY_EXTENSION);
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    String text = json.str_view();
+    assert(count_of(text, `"CUSTOM_texture_ktx2"`) == 2, "used once and required once, however often it was declared");
+    assert(count_of(text, `"KHR_texture_basisu"`) == 2, "a scene with one of each declares both");
+    assert(count_of(text, `"KHR_node_visibility"`) == 1, "used but not required: a reader without it still gets the file");
+    assert(text.contains(`"extensionsRequired":["CUSTOM_texture_ktx2","KHR_texture_basisu"]`));
+}
