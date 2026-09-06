@@ -432,6 +432,21 @@ fn void test_material_helpers() {
     }
 }
 
+// KHR_materials_emissive_strength: `emissive.glb` has two materials, the first
+// carrying the extension at 8.0 and the second carrying none, so the read and
+// the 1.0 default are both checked on one file.
+fn void test_emissive_strength_extension() {
+    GltfStream stream = gltf::open("test/emissive.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.materials.len() == 2);
+    assert(stream.gltf.materials[0].emissiveStrength == 8.0);
+    assert(stream.gltf.materials[0].emissiveFactor[0] == 1.0);
+
+    // No extension means the spec default, not zero.
+    assert(stream.gltf.materials[1].emissiveStrength == 1.0);
+}
+
 // --- Node world transform tests ---
 
 fn void test_node_world_position() {

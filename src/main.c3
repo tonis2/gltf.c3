@@ -32,6 +32,7 @@ const NODE_VISIBILITY_EXTENSION     = "KHR_node_visibility";
 const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
 const TEXTURE_BASISU_EXTENSION      = "KHR_texture_basisu";
 const ANIMATION_POINTER_EXTENSION   = "KHR_animation_pointer";
+const EMISSIVE_STRENGTH_EXTENSION   = "KHR_materials_emissive_strength";
 const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
 // Ours, like CUSTOM_materials_layers beside it, and it means BCn blocks in a
 // KTX2. The sibling above means the other thing a KTX2 can hold — ETC1S or
@@ -1034,6 +1035,14 @@ fn void? Material.from_json(&self, Object* json, Gltf data)
 			1.0
 		};
 	}
+
+	// KHR_materials_emissive_strength scales emissiveFactor past the 0..1 the
+	// core factor is clamped to; absent means the 1.0 set above.
+	@when_extended(json, EMISSIVE_STRENGTH_EXTENSION ; Object* extension)
+	{
+		double? strength = extension.get_float("emissiveStrength");
+		if (try strength) self.emissiveStrength = (float)strength;
+	};
 
 	if (try alphaMode)
 	{
