@@ -260,6 +260,7 @@ struct WriteNode
 	// Index into GltfBuilder.lights, or -1 — KHR_lights_punctual, held as a slot
 	// for `physics`'s reason.
 	int light;
+	int area_light;
 	// This node's morph weights, overriding the mesh's own. Empty on almost every
 	// node, which is why it is a list rather than a slot: see set_node_weights.
 	List{float} weights;
@@ -306,6 +307,17 @@ struct WriteLight
 	float range;
 	float inner_cone_angle;
 	float outer_cone_angle;
+}
+
+struct WriteAreaLight
+{
+	String name;
+	AreaLightShape shape;
+	Vec3 color;
+	float power_watts;
+	float width;
+	float height;
+	float spread;
 }
 
 <*
@@ -555,6 +567,7 @@ struct GltfBuilder
 	List{WriteSamplerState} samplers;
 	List{WriteCamera} cameras;
 	List{WriteLight} lights;
+	List{WriteAreaLight} area_lights;
 	// CUSTOM_materials_layers — see materials_layers.c3, which owns every line
 	// that reads or writes this.
 	List{WriteMaterialLayers} material_layers;
@@ -594,6 +607,7 @@ fn GltfBuilder builder(Allocator allocator = mem)
 	self.samplers.init(allocator);
 	self.cameras.init(allocator);
 	self.lights.init(allocator);
+	self.area_lights.init(allocator);
 	self.material_layers.init(allocator);
 	self.shapes.init(allocator);
 	self.physics_materials.init(allocator);
@@ -712,6 +726,8 @@ fn void GltfBuilder.free(&self)
 	self.cameras.free();
 	foreach (light : self.lights) light.name.free(self.allocator);
 	self.lights.free();
+	foreach (light : self.area_lights) light.name.free(self.allocator);
+	self.area_lights.free();
 
 	// CUSTOM_materials_layers — materials_layers.c3 owns what a layer holds.
 	self.free_material_layers();
@@ -1233,6 +1249,7 @@ fn uint GltfBuilder.add_node(&self, String name, int mesh = -1, int skin = -1,
 	node.instancing = -1;
 	node.camera = -1;
 	node.light = -1;
+	node.area_light = -1;
 	node.weights.init(self.allocator);
 	node.children.init(self.allocator);
 	self.nodes.push(node);
@@ -1471,6 +1488,19 @@ fn void GltfBuilder.set_node_camera(&self, uint node, uint camera)
 fn void GltfBuilder.set_node_light(&self, uint node, uint light)
 {
 	self.nodes.get_ref(node).light = (int)light;
+}
+
+fn uint GltfBuilder.add_area_light(&self, String name, AreaLightShape shape, float width, float height,
+	Vec3 color = { 1, 1, 1 }, float power_watts = 10.0f, float spread = (float)math::PI)
+{
+	self.area_lights.push({ .name = name.copy(self.allocator), .shape = shape, .color = color,
+		.power_watts = power_watts, .width = width, .height = height, .spread = spread });
+	return (uint)self.area_lights.len() - 1;
+}
+
+fn void GltfBuilder.set_node_area_light(&self, uint node, uint light)
+{
+	self.nodes.get_ref(node).area_light = (int)light;
 }
 
 fn String LightType.gltf_name(self)
@@ -1947,6 +1977,32 @@ fn void append_light_json(DString* out, WriteLight light) @private
 	out.append_char('}');
 }
 
+fn String AreaLightShape.gltf_name(self)
+{
+	switch (self)
+	{
+		case SQUARE: return "square";
+		case DISK: return "disk";
+		case ELLIPSE: return "ellipse";
+		default: return "rectangle";
+	}
+}
+
+fn void append_area_light_json(DString* out, WriteAreaLight light) @private
+{
+	out.append_char('{');
+	if (light.name.len > 0) { out.append_string(`"name":`); append_json_string(out, light.name); out.append_char(','); }
+	out.append_string(`"shape":`); append_json_string(out, light.shape.gltf_name());
+	out.append_string(`,"width":`); append_json_float(out, light.width);
+	out.append_string(`,"height":`); append_json_float(out, light.height);
+	out.append_string(`,"color":`);
+	float[3] color = { light.color.x, light.color.y, light.color.z };
+	append_json_floats(out, color[..]);
+	out.append_string(`,"powerWatts":`); append_json_float(out, light.power_watts);
+	out.append_string(`,"spread":`); append_json_float(out, light.spread);
+	out.append_char('}');
+}
+
 fn void append_json_string(DString* out, String value) @private
 {
 	out.append_char('"');
@@ -2390,13 +2446,14 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 	// the one that forgot would write a transform the document does not declare.
 	bool uses_texture_transform = self.any_texture_transform();
 	bool uses_lights = self.lights.len() > 0;
+	bool uses_area_lights = self.area_lights.len() > 0;
 	// And whatever a caller declared by name. `use_extension` has why that door
 	// exists at all: an `image/ktx2` is CUSTOM_texture_ktx2 or KHR_texture_basisu
 	// depending on bytes this writer never reads.
 	bool uses_declared = self.extensions.len() > 0;
 
 	if (uses_shapes || uses_rigid_bodies || uses_instancing || uses_material_layers
-		|| uses_texture_transform || uses_lights || uses_declared)
+		|| uses_texture_transform || uses_lights || uses_area_lights || uses_declared)
 	{
 		// A running "something is already there" rather than the pairwise
 		// conditions two extensions got away with. Three is where that stops
@@ -2439,6 +2496,12 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 			append_json_string(o, PUNCTUAL_LIGHT_EXTENSION);
 			written = true;
 		}
+		if (uses_area_lights)
+		{
+			if (written) o.append_char(',');
+			append_json_string(o, AREA_LIGHT_EXTENSION);
+			written = true;
+		}
 		foreach (extension : self.extensions)
 		{
 			if (written) o.append_char(',');
@@ -2465,7 +2528,7 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 	}
 	if (needed) o.append_char(']');
 
-	if (uses_shapes || rigid_body_arrays || uses_lights)
+	if (uses_shapes || rigid_body_arrays || uses_lights || uses_area_lights)
 	{
 		o.append_string(`,"extensions":{`);
 
@@ -2481,6 +2544,18 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 			{
 				if (i > 0) o.append_char(',');
 				append_light_json(o, light);
+			}
+			o.append_string("]}");
+			if (uses_shapes || rigid_body_arrays || uses_area_lights) o.append_char(',');
+		}
+		if (uses_area_lights)
+		{
+			append_json_string(o, AREA_LIGHT_EXTENSION);
+			o.append_string(`:{"lights":[`);
+			foreach (i, light : self.area_lights)
+			{
+				if (i > 0) o.append_char(',');
+				append_area_light_json(o, light);
 			}
 			o.append_string("]}");
 			if (uses_shapes || rigid_body_arrays) o.append_char(',');
@@ -2636,7 +2711,7 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				append_json_uints(o, &node.children);
 				first = false;
 			}
-			if (node.physics >= 0 || node.instancing >= 0 || node.light >= 0)
+			if (node.physics >= 0 || node.instancing >= 0 || node.light >= 0 || node.area_light >= 0)
 			{
 				if (!first) o.append_char(',');
 				o.append_string(`"extensions":{`);
@@ -2645,6 +2720,13 @@ fn DString GltfBuilder.to_json(&self, Allocator allocator, String buffer_uri = "
 				{
 					append_json_string(o, PUNCTUAL_LIGHT_EXTENSION);
 					o.appendf(`:{"light":%d}`, node.light)!!;
+					extended = true;
+				}
+				if (node.area_light >= 0)
+				{
+					if (extended) o.append_char(',');
+					append_json_string(o, AREA_LIGHT_EXTENSION);
+					o.appendf(`:{"light":%d}`, node.area_light)!!;
 					extended = true;
 				}
 				if (node.physics >= 0)

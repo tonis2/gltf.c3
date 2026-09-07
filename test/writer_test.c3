@@ -1202,6 +1202,37 @@ fn void test_write_camera_and_light() {
     assert(stream.gltf.nodes[light_node].light == 0);
 }
 
+fn void test_area_light_round_trip() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    uint light = builder.add_area_light("canopy", AreaLightShape.DISK, 4.2, 4.2,
+        color: { 0.8, 0.6, 0.4 }, power_watts: 1000, spread: (float)math::PI);
+    uint node = builder.add_node("canopy", translation: { 1, 2, 3 });
+    builder.set_node_area_light(node, light);
+    builder.add_root(node);
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(count_of(json.str_view(), `"CUSTOM_lights_area"`) == 3,
+        "declared, root array and node reference");
+    assert(json.str_view().contains(`"powerWatts":1000`));
+
+    builder.save_glb("test/out_area_light.glb")!!;
+    defer (void)file::delete("test/out_area_light.glb");
+    GltfStream stream = gltf::open("test/out_area_light.glb")!!;
+    defer stream.close();
+
+    assert(stream.gltf.area_lights.len() == 1);
+    AreaLight back = stream.gltf.area_lights[0];
+    assert(back.name == "canopy");
+    assert(back.shape == AreaLightShape.DISK);
+    assert(near(back.width, 4.2) && near(back.height, 4.2));
+    assert(near(back.power_watts, 1000));
+    assert(near(back.color[1], 0.6));
+    assert(stream.gltf.nodes[node].area_light == 0);
+}
+
 // Morph targets: the displacements, the weights they start at and the names the
 // tool on the other side of the file shows. Two targets on one primitive,
 // because one would not prove the order survived, and the order is the only

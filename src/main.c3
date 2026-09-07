@@ -28,6 +28,7 @@ alias NodeList = List{Node};
 macro double @num(Object* o) => o.is_int() ? (double)o.i : o.f;
 
 const PUNCTUAL_LIGHT_EXTENSION      = "KHR_lights_punctual";
+const AREA_LIGHT_EXTENSION          = "CUSTOM_lights_area";
 const NODE_VISIBILITY_EXTENSION     = "KHR_node_visibility";
 const TEXTURE_TRANSFORM_EXTENSION   = "KHR_texture_transform";
 const TEXTURE_BASISU_EXTENSION      = "KHR_texture_basisu";
@@ -192,6 +193,7 @@ struct Gltf
 	List{Texture} textures;
 	List{Animation} animations;
 	List{Light} lights;
+	List{AreaLight} area_lights;
 	List{String} extensions;
 
 	// The file's own `extras`, the glTF slot for whatever the authoring tool
@@ -231,6 +233,7 @@ struct Node
 	int camera;
 	int skin;
 	int light;
+	int area_light;
 
 	int collider;
 	int motion;
@@ -422,6 +425,19 @@ struct Light @align(64)
 	float outer_cone_angle;
 }
 
+enum AreaLightShape { SQUARE, RECTANGLE, DISK, ELLIPSE }
+
+struct AreaLight
+{
+	String name;
+	AreaLightShape shape;
+	float[3] color;
+	float power_watts;
+	float width;
+	float height;
+	float spread;
+}
+
 struct AnimationValue
 {
 	float time;
@@ -490,6 +506,7 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	self.camera = json.get_int("camera") ?? -1;
 	self.skin = json.get_int("skin") ?? -1;
 	self.light = -1;
+	self.area_light = -1;
 	self.joint = -1;
 	self.motion = -1;
 	self.collider = -1;
@@ -523,6 +540,10 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 	@when_extended(json, PUNCTUAL_LIGHT_EXTENSION ; Object* extension)
 	{
 		self.light = extension.get_int("light")!!;
+	};
+	@when_extended(json, AREA_LIGHT_EXTENSION ; Object* extension)
+	{
+		self.area_light = extension.get_int("light")!!;
 	};
 
 	@when_extended(json, NODE_VISIBILITY_EXTENSION ; Object* extension)
@@ -1391,6 +1412,30 @@ fn void Light.from_json(&self, Object* json)
 	}
 }
 
+fn void AreaLight.from_json(&self, Object* json, Allocator allocator)
+{
+	String? name = json.get_string("name");
+	String? shape = json.get_string("shape");
+	Object*? color = json.get("color");
+	self.color = { 1, 1, 1 };
+	self.width = (float)json.get_float("width") ?? 1.0f;
+	self.height = (float)json.get_float("height") ?? self.width;
+	self.power_watts = (float)json.get_float("powerWatts") ?? 10.0f;
+	self.spread = (float)json.get_float("spread") ?? (float)math::PI;
+	if (try name) self.name = name.copy(allocator);
+	if (try color) self.color = { (float)@num(color.get_at(0)), (float)@num(color.get_at(1)), (float)@num(color.get_at(2)) };
+	if (try shape)
+	{
+		switch (shape)
+		{
+			case "square": self.shape = SQUARE;
+			case "disk": self.shape = DISK;
+			case "ellipse": self.shape = ELLIPSE;
+			default: self.shape = RECTANGLE;
+		}
+	}
+}
+
 fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @private
 {
 	ParseResult result;
@@ -1408,6 +1453,7 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	content.samplers.init(allocator);
 	content.textures.init(allocator);
 	content.animations.init(allocator);
+	content.area_lights.init(allocator);
 	content.lights.init(allocator);
 	content.extensions.init(allocator);
 	content.extras.init(allocator);
@@ -1609,6 +1655,19 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 				}
 
 				content.lights.push(data);
+			}
+		}
+	};
+	@when_extended(gltfJson, AREA_LIGHT_EXTENSION ; Object* extension)
+	{
+		Object*? lights = extension.get("lights");
+		if (try lights)
+		{
+			foreach (light : lights.array)
+			{
+				AreaLight data;
+				data.from_json(light, allocator);
+				content.area_lights.push(data);
 			}
 		}
 	};
@@ -1851,6 +1910,8 @@ fn void Gltf.free(Gltf* self)
 	self.textures.free();
 	self.samplers.free();
 	self.lights.free();
+	foreach (&light : self.area_lights) light.name.free(mem);
+	self.area_lights.free();
 	self.extensions.free();
 	self.animations.free();
 	self.skins.free();
