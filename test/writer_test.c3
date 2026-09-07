@@ -993,6 +993,75 @@ fn void test_write_material_layers() {
     assert(near(third.bump.strength, 1.0) && near(third.bump.distance, 1.0));
 }
 
+// KHR_texture_transform on a layer's own maps, out and back in again.
+//
+// The core material's transform has a test of its own above. This is the half
+// that had none, and it is the half a terrain is made of: the exporter writes
+// one Mapping node per layer, so a ground tiling three times with a gravel layer
+// tiling seven is two transforms in one material and a reader that parses only
+// the first draws the gravel at the ground's density.
+//
+// Every slot a layer has carries one here — albedo, normal and the mask — because
+// they go out through one emitter and come back through one parser, and a check
+// on the albedo alone would pass on a parser that read `pbrMetallicRoughness` and
+// stopped.
+fn void test_layer_texture_transforms_round_trip() {
+    GltfBuilder builder = gltf::builder();
+    defer builder.free();
+
+    char[3] bytes = { 1, 2, 3 };
+    uint ground_image = builder.add_image("ground", bytes[..], ImageType.IMAGE_PNG);
+    uint gravel_image = builder.add_image("gravel", bytes[..], ImageType.IMAGE_PNG);
+    uint ground = builder.add_texture(ground_image);
+    uint gravel = builder.add_texture(gravel_image);
+
+    WriteTextureRef base = gltf::texture_ref((int)ground);
+    base.scale = { 3, 3 };
+    base.offset = { 0.25, 0.5 };
+    uint material = builder.add_material("terrain", base_color_texture: base);
+
+    uint stack = builder.add_material_layers(material, gltf::texture_ref(-1));
+
+    WriteTextureRef detail = gltf::texture_ref((int)gravel);
+    detail.scale = { 7, 7 };
+    detail.offset = { 0, -6 };
+
+    WriteMaterialLayer grit = gltf::material_layer("grit");
+    grit.baseColorTexture = detail;
+    grit.normalTexture = detail;
+    grit.mask.source = TEXTURE;
+    grit.mask.channel = G;
+    grit.mask.texture = detail;
+    builder.add_layer(stack, grit);
+
+    assert(builder.any_layer_texture_transform(), "a layer's transform is one the document declares");
+
+    builder.add_root(builder.add_node("terrain"));
+
+    DString json = builder.to_json(mem);
+    defer json.free();
+    assert(json.str_view().contains(`"scale":[7,7]`), "the layer's own scale is written");
+
+    builder.save_glb("test/out_layer_transform.glb")!!;
+    defer (void)file::delete("test/out_layer_transform.glb");
+
+    GltfStream stream = gltf::open("test/out_layer_transform.glb")!!;
+    defer stream.close();
+
+    Material* back = stream.gltf.materials.get_ref(material);
+    // The core material's, which is what a base surface tiles at.
+    assert(near(back.baseColorTexture.scale.x, 3) && near(back.baseColorTexture.scale.y, 3));
+    assert(near(back.baseColorTexture.offset.y, 0.5));
+
+    // And the layer's, on all three of its slots.
+    MaterialLayer layer = back.layers_ext.layers[0];
+    assert(near(layer.baseColorTexture.scale.x, 7) && near(layer.baseColorTexture.offset.y, -6));
+    assert(near(layer.normalTexture.scale.y, 7) && near(layer.normalTexture.offset.y, -6));
+    assert(near(layer.mask.texture.scale.x, 7) && near(layer.mask.texture.offset.y, -6));
+    // A rotation nobody wrote comes back as none rather than as noise.
+    assert(layer.baseColorTexture.rotation == 0 && back.baseColorTexture.rotation == 0);
+}
+
 // A material carrying no layers writes no extensions object, and a document
 // with no layered material anywhere does not declare the extension. The absent
 // case is the one every material in every other test takes, so it is worth one
