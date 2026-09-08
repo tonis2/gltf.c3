@@ -318,6 +318,7 @@ struct WriteAreaLight
 	float width;
 	float height;
 	float spread;
+	float range;
 }
 
 <*
@@ -1491,10 +1492,11 @@ fn void GltfBuilder.set_node_light(&self, uint node, uint light)
 }
 
 fn uint GltfBuilder.add_area_light(&self, String name, AreaLightShape shape, float width, float height,
-	Vec3 color = { 1, 1, 1 }, float power_watts = 10.0f, float spread = (float)math::PI)
+	Vec3 color = { 1, 1, 1 }, float power_watts = 10.0f, float spread = (float)math::PI,
+	float range = 0.0f)
 {
 	self.area_lights.push({ .name = name.copy(self.allocator), .shape = shape, .color = color,
-		.power_watts = power_watts, .width = width, .height = height, .spread = spread });
+		.power_watts = power_watts, .width = width, .height = height, .spread = spread, .range = range });
 	return (uint)self.area_lights.len() - 1;
 }
 
@@ -2000,6 +2002,7 @@ fn void append_area_light_json(DString* out, WriteAreaLight light) @private
 	append_json_floats(out, color[..]);
 	out.append_string(`,"powerWatts":`); append_json_float(out, light.power_watts);
 	out.append_string(`,"spread":`); append_json_float(out, light.spread);
+	if (light.range > 0.0f) { out.append_string(`,"range":`); append_json_float(out, light.range); }
 	out.append_char('}');
 }
 

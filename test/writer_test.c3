@@ -1207,7 +1207,8 @@ fn void test_area_light_round_trip() {
     defer builder.free();
 
     uint light = builder.add_area_light("canopy", AreaLightShape.DISK, 4.2, 4.2,
-        color: { 0.8, 0.6, 0.4 }, power_watts: 1000, spread: (float)math::PI);
+        color: { 0.8, 0.6, 0.4 }, power_watts: 1000, spread: (float)math::PI, range: 37);
+    uint unlimited = builder.add_area_light("unlimited", AreaLightShape.SQUARE, 1, 1);
     uint node = builder.add_node("canopy", translation: { 1, 2, 3 });
     builder.set_node_area_light(node, light);
     builder.add_root(node);
@@ -1217,19 +1218,23 @@ fn void test_area_light_round_trip() {
     assert(count_of(json.str_view(), `"CUSTOM_lights_area"`) == 3,
         "declared, root array and node reference");
     assert(json.str_view().contains(`"powerWatts":1000`));
+    assert(json.str_view().contains(`"range":37`));
+    assert(count_of(json.str_view(), `"range"`) == 1, "an absent area range stays absent");
 
     builder.save_glb("test/out_area_light.glb")!!;
     defer (void)file::delete("test/out_area_light.glb");
     GltfStream stream = gltf::open("test/out_area_light.glb")!!;
     defer stream.close();
 
-    assert(stream.gltf.area_lights.len() == 1);
+    assert(stream.gltf.area_lights.len() == 2);
     AreaLight back = stream.gltf.area_lights[0];
     assert(back.name == "canopy");
     assert(back.shape == AreaLightShape.DISK);
     assert(near(back.width, 4.2) && near(back.height, 4.2));
     assert(near(back.power_watts, 1000));
+    assert(near(back.range, 37));
     assert(near(back.color[1], 0.6));
+    assert(stream.gltf.area_lights[unlimited].range == 0, "a missing range keeps the reader fallback marker");
     assert(stream.gltf.nodes[node].area_light == 0);
 }
 

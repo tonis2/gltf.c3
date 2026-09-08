@@ -436,6 +436,7 @@ struct AreaLight
 	float width;
 	float height;
 	float spread;
+	float range;
 }
 
 struct AnimationValue
@@ -1422,6 +1423,7 @@ fn void AreaLight.from_json(&self, Object* json, Allocator allocator)
 	self.height = (float)json.get_float("height") ?? self.width;
 	self.power_watts = (float)json.get_float("powerWatts") ?? 10.0f;
 	self.spread = (float)json.get_float("spread") ?? (float)math::PI;
+	self.range = (float)json.get_float("range") ?? 0.0f;
 	if (try name) self.name = name.copy(allocator);
 	if (try color) self.color = { (float)@num(color.get_at(0)), (float)@num(color.get_at(1)), (float)@num(color.get_at(2)) };
 	if (try shape)
