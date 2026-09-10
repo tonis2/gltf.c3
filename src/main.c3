@@ -35,13 +35,10 @@ const TEXTURE_BASISU_EXTENSION      = "KHR_texture_basisu";
 const ANIMATION_POINTER_EXTENSION   = "KHR_animation_pointer";
 const EMISSIVE_STRENGTH_EXTENSION   = "KHR_materials_emissive_strength";
 const MESH_GPU_INSTANCING_EXTENSION = "EXT_mesh_gpu_instancing";
-// Ours, like CUSTOM_materials_layers beside it, and it means BCn blocks in a
-// KTX2. The sibling above means the other thing a KTX2 can hold — ETC1S or
-// UASTC — so which of the two a `.glb` declares is a question about the bytes
-// and not about the mime type. `GltfBuilder.use_extension` is that door.
 const TEXTURE_KTX2_EXTENSION        = "CUSTOM_texture_ktx2";
 const IMPLICIT_SHAPES_EXTENSION     = "KHR_implicit_shapes";
 const RIGID_BODIES_EXTENSION        = "KHR_physics_rigid_bodies";
+const PHYSICS_NAVIGATION_EXTENSION  = "CUSTOM_physics_navigation";
 
 enum Targets
 {
@@ -210,6 +207,8 @@ struct Gltf
 	List{CollisionFilter} collision_filters;
 	List{Collider} colliders;
 	List{Motion} motions;
+	// Cell payloads stay accessors, so a GltfStream loads them with the rest.
+	List{NavigationProfile} navigation_profiles;
 }
 
 struct PointerTarget
@@ -1467,6 +1466,7 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 	content.collision_filters.init(allocator);
 	content.colliders.init(allocator);
 	content.motions.init(allocator);
+	content.navigation_profiles.init(allocator);
 
 	defer catch content.free();
 
@@ -1635,6 +1635,21 @@ fn ParseResult? parse_metadata(InStream stream, Allocator allocator = mem) @priv
 			foreach (filter : collision_filters.array)
 			{
 				content.collision_filters.push((CollisionFilter) { }.from_json(filter, allocator));
+			}
+		}
+	};
+
+	@when_extended(gltfJson, PHYSICS_NAVIGATION_EXTENSION ; Object* extension)
+	{
+		Object*? profiles = extension.get("profiles");
+		if (try profiles && (extension.get_int("version") ?? 0) == 1)
+		{
+			foreach (profile : profiles.array)
+			{
+				// Object.get reads the union as a map, so a non-object entry
+				// must never reach from_json.
+				if (!profile.is_map()) continue;
+				content.navigation_profiles.push((NavigationProfile) { }.from_json(profile, allocator));
 			}
 		}
 	};
@@ -1875,6 +1890,7 @@ fn void Gltf.free(Gltf* self)
 	foreach (scene : self.scenes) scene.free();
 	foreach (animation : self.animations) animation.free();
 	foreach (joint : self.physics_joints) joint.free();
+	foreach (&profile : self.navigation_profiles) profile.free();
 
 	// A filter's system names were copied out of the JSON on the way in — see
 	// CollisionFilter.from_json — so the document owns them, not the filter.
@@ -1894,6 +1910,7 @@ fn void Gltf.free(Gltf* self)
 	foreach (collider : self.colliders) collider.free();
 	self.colliders.free();
 	self.motions.free();
+	self.navigation_profiles.free();
 	self.collision_filters.free();
 	self.physics_materials.free();
 	self.physics_joints.free();

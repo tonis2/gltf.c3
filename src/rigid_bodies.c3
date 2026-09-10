@@ -118,6 +118,26 @@ struct Collider
 	List{uint} nodes; // For compound triggers
 }
 
+
+struct NavigationProfile
+{
+	Allocator allocator;
+	String name;
+	String source_hash;
+	float cell_size;
+	float agent_radius;
+	float agent_height;
+	float step_height;
+	float slope_limit;
+	Vec3 origin;
+	uint[3] dimensions;
+	uint cells;
+	uint components;
+	uint largest_component;
+	uint solid_cells;
+	uint floor_cells;
+}
+
 fn bool Collider.has_mesh(self) => self.mesh != -1;
 fn bool Collider.has_shape(self) => self.shape != -1;
 fn bool Collider.has_node(self) => self.node != -1;
@@ -259,6 +279,56 @@ fn void CollisionFilter.free(&self)
 	self.systems.free();
 	self.not_colliding.free();
 	self.colliding_with.free();
+}
+
+fn NavigationProfile NavigationProfile.from_json(self, Object* json, Allocator allocator = mem)
+{
+	Object*? origin = json.get("origin");
+	Object*? dimensions = json.get("dimensions");
+
+	// Copied for the same reason a filter's system names are, just above.
+	self.allocator = allocator;
+	self.name = (json.get_string("name") ?? "").copy(allocator);
+	self.source_hash = (json.get_string("sourceHash") ?? "").copy(allocator);
+
+	self.cell_size = (float)json.get_float("cellSize") ?? 0;
+	self.agent_radius = (float)json.get_float("agentRadius") ?? 0;
+	self.agent_height = (float)json.get_float("agentHeight") ?? 0;
+	self.step_height = (float)json.get_float("stepHeight") ?? 0;
+	self.slope_limit = (float)json.get_float("slopeLimit") ?? 0;
+
+	self.cells = (uint)(json.get_int("cells") ?? 0);
+	self.components = (uint)(json.get_int("components") ?? 0);
+	self.largest_component = (uint)(json.get_int("largestComponent") ?? 0);
+	self.solid_cells = (uint)(json.get_int("solidCells") ?? 0);
+	self.floor_cells = (uint)(json.get_int("floorCells") ?? 0);
+
+	if (try origin)
+	{
+		foreach (sz i, value : origin.array)
+		{
+			if (i == 3) break;
+			self.origin[i] = (float)@num(value);
+		}
+	}
+
+	if (try dimensions)
+	{
+		foreach (sz i, value : dimensions.array)
+		{
+			if (i == 3) break;
+			self.dimensions[i] = (uint)@num(value);
+		}
+	}
+
+	return self;
+}
+
+fn void NavigationProfile.free(&self)
+{
+	self.name.free(self.allocator);
+	self.source_hash.free(self.allocator);
+	*self = { };
 }
 
 fn Shape Shape.from_json(self, Object* json)
