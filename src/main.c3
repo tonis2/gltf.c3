@@ -576,11 +576,14 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 			Collider collider_data = (Collider) { }.from_json(collider, allocator: allocator);
 			collider_data.base_node = (int)self.index;
 
-			if (collider_data.has_shape() == false)
+			if (!collider_data.has_shape() && !collider_data.has_mesh()
+				&& !collider_data.has_node())
 			{
 				collider_data.mesh = self.mesh;
-				assert (self.mesh != -1 , "Collider must have a shape or mesh info, both cant be missing");
 			}
+			assert (collider_data.has_shape() || collider_data.has_mesh()
+				|| collider_data.has_node(),
+				"Collider must have a shape, mesh or node containing its geometry");
 
 			content.colliders.push(collider_data);
 		}
@@ -591,7 +594,8 @@ fn void Node.from_json(&self, Object* json, Gltf* content, Allocator allocator)
 			Collider trigger_data = (Collider) { }.from_json(trigger, is_trigger: true, allocator: allocator);
 			trigger_data.base_node = (int)self.index;
 
-			if (trigger_data.has_shape() == false)
+			if (!trigger_data.has_shape() && !trigger_data.has_mesh()
+				&& !trigger_data.has_node())
 			{
 				trigger_data.mesh = self.mesh;
 			}

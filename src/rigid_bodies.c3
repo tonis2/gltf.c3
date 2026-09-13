@@ -165,6 +165,7 @@ fn Collider Collider.from_json(self, Object* json, bool is_trigger = false, Allo
 		self.convex_hull = geometry.get_bool("convexHull") ?? false;
 		self.shape = geometry.get_int("shape") ?? -1;
 		self.node = geometry.get_int("node") ?? -1;
+		self.mesh = geometry.get_int("mesh") ?? -1;
 	}
 
 	self.material = json.get_int("physicsMaterial") ?? -1;

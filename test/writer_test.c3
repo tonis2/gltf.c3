@@ -690,6 +690,31 @@ fn void test_write_physics() {
 
     builder.add_node_joint(thigh, pelvis, joint_settings, enable_collision: true);
 
+	// Collision-only hull geometry can live as a mesh resource without a scene
+	// node. This is the compact spelling an articulated rig uses for one hull per
+	// bone: the mesh bytes exist, while nothing visual is added to the scene.
+	Vec3[4] hull_points = {
+		{ 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 },
+	};
+	uint[12] hull_indices = { 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3 };
+	WriteAttribute[1] hull_attributes = {
+		{ .name = "POSITION", .accessor = builder.add_positions(hull_points[..]) },
+	};
+	uint hull_mesh = builder.add_mesh("pelvis.collider");
+	builder.add_primitive(hull_mesh, hull_attributes[..],
+		indices: (int)builder.add_indices(hull_indices[..]));
+	uint hull_body = builder.add_node("hull-body");
+	builder.add_root(hull_body);
+	builder.add_collider(hull_body, {
+		.convex_hull = true,
+		.shape = -1,
+		.node = -1,
+		.mesh = (int)hull_mesh,
+		.material = -1,
+		.collision_filter = -1,
+		.base_node = -1,
+	});
+
     // Named once each, however many objects use them.
     DString json = builder.to_json(mem);
     defer json.free();
@@ -757,6 +782,13 @@ fn void test_write_physics() {
     assert(trigger_back.is_trigger, "a trigger written under 'collider' would resist instead of report");
     assert(trigger_back.shape == (int)sphere);
     assert(!trigger_back.has_material() && !trigger_back.has_filter());
+
+	Node hull_body_back = stream.gltf.nodes[hull_body];
+	assert(hull_body_back.has_collider());
+	Collider hull_back = stream.gltf.colliders[(uint)hull_body_back.collider];
+	assert(hull_back.convex_hull);
+	assert(hull_back.mesh == (int)hull_mesh);
+	assert(!hull_back.has_shape() && !hull_back.has_node());
 
     // The joint hangs on one of the two bodies and names the other.
     assert(thigh_back.has_joint());

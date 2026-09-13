@@ -1785,9 +1785,10 @@ fn WriteNodePhysics* node_physics_ref(GltfBuilder* builder, uint node) @private
  and filter 0, so build one by naming every field it needs and setting the rest
  to -1, the way Collider.from_json leaves them.
 
- Geometry is an implicit shape, or another node whose mesh is the collision
- geometry, or neither — in which case the collider is the node's own mesh, and
- the node had better have one, since that is the only case the parser refuses.
+ Geometry is an implicit shape, a mesh resource, another node whose mesh is the
+ collision geometry, or none of those — in which case the collider uses the
+ node's own mesh. A mesh resource need not have a visual scene node, which is
+ what lets an exporter store compact collision-only hulls without drawing them.
 
  A node holds one collider, so calling this twice replaces the first rather
  than giving the node two.
@@ -2280,13 +2281,20 @@ fn void append_collider_json(DString* out, Collider collider) @private
 	out.append_char('{');
 	bool first = true;
 
-	if (collider.has_shape() || collider.has_node() || collider.convex_hull)
+	if (collider.has_shape() || collider.has_mesh() || collider.has_node()
+		|| collider.convex_hull)
 	{
 		out.append_string(`"geometry":{`);
 		bool geometry_first = true;
 		if (collider.has_shape())
 		{
 			out.appendf(`"shape":%d`, collider.shape)!!;
+			geometry_first = false;
+		}
+		if (collider.has_mesh())
+		{
+			if (!geometry_first) out.append_char(',');
+			out.appendf(`"mesh":%d`, collider.mesh)!!;
 			geometry_first = false;
 		}
 		if (collider.has_node())
