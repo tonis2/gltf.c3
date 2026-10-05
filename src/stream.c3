@@ -16,6 +16,7 @@ enum LoadState
 	UNLOADED,
 	MMAP,
 	HEAP,
+	BORROWED, // a view into the bytes `open_bytes` was given; nothing to free
 }
 
 struct BufferSlot
@@ -46,6 +47,8 @@ struct GltfStream
 	BufferSlot[] buffer_slots;
 	ImageSlot[] image_slots;
 	Allocator allocator;
+	// The whole file, when it was opened from memory (`open_bytes`). Borrowed.
+	char[] memory;
 }
 
 fn GltfStream? open(String path, Allocator allocator = mem)
@@ -63,7 +66,28 @@ fn GltfStream? open(String path, Allocator allocator = mem)
 	defer file.close()!!;
 
 	ParseResult result = parse_metadata(&file, allocator)!;
+	return stream_of(result, path, allocator);
+}
 
+<*
+ A .glb (or .gltf) already in memory, read the way `open` reads a file, without
+ one on disk. `name` stands in for the path: it is what `source_path` says, and
+ an external .bin or image a .gltf names is looked for beside it.
+
+ @param data : `Borrowed: it must outlive the stream, whose buffers point into it.`
+*>
+fn GltfStream? open_bytes(char[] data, String name = "memory.glb", Allocator allocator = mem)
+{
+	ByteReader reader;
+	reader.init(data);
+	ParseResult result = parse_metadata(&reader, allocator)!;
+	GltfStream stream = stream_of(result, name, allocator);
+	stream.memory = data;
+	return stream;
+}
+
+fn GltfStream stream_of(ParseResult result, String path, Allocator allocator) @local
+{
 	GltfStream stream;
 	stream.gltf = result.gltf;
 	stream.is_glb = result.is_glb;
@@ -139,6 +163,15 @@ fn void? GltfStream.load_buffer(&self, uint index)
 		case ENCODED_BIN:
 			// GLB embedded binary -- mmap or read the binary chunk
 			sz file_offset = self.glb_binary_offset + buffer.source_offset;
+			if (self.memory.len > 0)
+			{
+				if (file_offset < 0 || file_offset + buffer.size > self.memory.len) return io::EOF~;
+				slot.ptr = self.memory.ptr + file_offset;
+				slot.len = buffer.size;
+				slot.state = BORROWED;
+				slot.ref_count = 1;
+				return;
+			}
 			$if env::LIBC &&& env::POSIX:
 				file::mmap::FileMmap* mm = alloc::new(self.allocator, file::mmap::FileMmap);
 				*mm = file::mmap_open(self.source_path, "r", file_offset, buffer.size)!;
